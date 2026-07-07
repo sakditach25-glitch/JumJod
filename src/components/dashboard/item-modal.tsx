@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
+import { X, Calendar, Image as ImageIcon, Loader2, AlertCircle, FileText } from 'lucide-react';
 import { Item, ItemStatus } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
 import { uploadItemImage } from '@/lib/supabase/storage';
@@ -45,6 +45,7 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
   
   // UI Status States
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
         setBudgetDueDate(itemToEdit.budget_due_date);
         setExistingImageUrl(itemToEdit.image_url);
         setImagePreview(itemToEdit.image_url);
+        setFileName(itemToEdit.image_url ? itemToEdit.image_url.split('/').pop()?.split('-').slice(1).join('-') || 'เอกสารแนบ' : null);
       } else {
         // Reset form for new item
         setTitle('');
@@ -74,6 +76,7 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
         setBudgetDueDate(null);
         setExistingImageUrl(null);
         setImagePreview(null);
+        setFileName(null);
       }
       setImageFile(null);
       setError(null);
@@ -103,12 +106,24 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
     const file = e.target.files?.[0];
     if (file) {
       setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setFileName(file.name);
+      
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImagePreview(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setImagePreview(null); // Clear image preview if not an image
+      }
     }
+  };
+
+  const isImageFile = (url: string | null) => {
+    if (!url) return false;
+    const ext = url.split('.').pop()?.toLowerCase();
+    return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext || '');
   };
 
   // TanStack Query Mutation for Create / Update
@@ -341,13 +356,13 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
             </div>
           )}
 
-          {/* Image Attachment */}
+          {/* Image/File Attachment */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">
-              แนบเอกสาร/รูปภาพประกอบ (Image Attachment)
+              แนบเอกสาร/รูปภาพประกอบ (Attachment)
             </label>
             <div className="flex items-center gap-4">
-              {imagePreview ? (
+              {imagePreview && (imageFile ? imageFile.type.startsWith('image/') : (!existingImageUrl || isImageFile(existingImageUrl))) ? (
                 <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-800 shrink-0">
                   <Image
                     src={imagePreview}
@@ -362,6 +377,24 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
                       setImageFile(null);
                       setImagePreview(null);
                       setExistingImageUrl(null);
+                      setFileName(null);
+                    }}
+                    className="absolute top-1 right-1 p-0.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-300 hover:text-white"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (imageFile || existingImageUrl) ? (
+                <div className="relative w-20 h-20 rounded-xl border border-slate-800 bg-slate-950/50 flex flex-col items-center justify-center p-2 text-center shrink-0">
+                  <FileText className="w-6 h-6 text-violet-500 mb-1" />
+                  <span className="text-[8px] text-slate-405 dark:text-slate-400 truncate w-full px-1">{fileName || 'เอกสารแนบ'}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageFile(null);
+                      setImagePreview(null);
+                      setExistingImageUrl(null);
+                      setFileName(null);
                     }}
                     className="absolute top-1 right-1 p-0.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-300 hover:text-white"
                   >
@@ -371,17 +404,17 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
               ) : (
                 <label className="w-20 h-20 rounded-xl border border-dashed border-slate-800 hover:border-violet-500/50 flex flex-col items-center justify-center cursor-pointer bg-slate-950/50 text-slate-500 hover:text-slate-400 transition-colors shrink-0">
                   <ImageIcon className="w-5 h-5 mb-1" />
-                  <span className="text-[10px]">เลือกรูป</span>
+                  <span className="text-[10px]">เลือกไฟล์</span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     onChange={handleImageChange}
                     className="hidden"
                   />
                 </label>
               )}
               <div className="text-xs text-slate-500 space-y-1">
-                <p>รองรับไฟล์รูปภาพเท่านั้น (JPG, PNG, WebP)</p>
+                <p>รองรับไฟล์รูปภาพ และเอกสารทั่วไป (PDF, Word, Excel)</p>
                 <p>จะถูกอัปโหลดไปยังระบบจัดเก็บไฟล์ Supabase Storage</p>
               </div>
             </div>

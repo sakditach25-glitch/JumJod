@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -24,6 +24,101 @@ export default function DashboardPage() {
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+
+  // Drag-and-Drop & Toast states
+  const [activeDragColumn, setActiveDragColumn] = useState<ItemStatus | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' = 'success') => {
+    setToast({ message, type });
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  };
+
+  const isImageFile = (url: string | null) => {
+    if (!url) return false;
+    const ext = url.split('.').pop()?.toLowerCase();
+    return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext || '');
+  };
+
+  function calculateDueDate(poDateStr: string | null, creditTerm: number | null): string | null {
+    if (!poDateStr || !creditTerm) return null;
+    const date = new Date(poDateStr);
+    if (isNaN(date.getTime())) return null;
+    date.setDate(date.getDate() + creditTerm);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // Subscribe to Supabase Realtime updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'items'
+        },
+        (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['items'] });
+          
+          if (payload.eventType === 'INSERT') {
+            const newItem = payload.new as Item;
+            showToast(`➕ บันทึกรายการใหม่: "${newItem.title}" จาก LINE Bot!`, 'info');
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedItem = payload.new as Item;
+            const oldItem = payload.old as Item;
+            if (oldItem && oldItem.status !== updatedItem.status) {
+              const statusName = 
+                updatedItem.status === 'Pending' ? 'กำลังดำเนินการ' :
+                updatedItem.status === 'Purchasing' ? 'ติดต่อจัดซื้อ' : 'กำลังออก ITEM';
+              showToast(`🔄 อัปเดตรายการ: "${updatedItem.title}" เป็น "${statusName}"`, 'info');
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, queryClient]);
+
+  // Drag and Drop handlers
+  const handleDragStart = (e: React.DragEvent, itemId: string) => {
+    e.dataTransfer.setData('text/plain', itemId);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (e: React.DragEvent, status: ItemStatus) => {
+    e.preventDefault();
+    setActiveDragColumn(status);
+  };
+
+  const handleDragLeave = () => {
+    setActiveDragColumn(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, nextStatus: ItemStatus) => {
+    e.preventDefault();
+    setActiveDragColumn(null);
+    const itemId = e.dataTransfer.getData('text/plain');
+    if (itemId) {
+      const item = items.find((i) => i.id === itemId);
+      if (item && item.status !== nextStatus) {
+        moveStatusMutation.mutate({ itemId, nextStatus });
+      }
+    }
+  };
 
   // Fetch user profile using React Query
   const { data: profile, refetch: refetchProfile } = useQuery<Profile>({
@@ -96,11 +191,26 @@ export default function DashboardPage() {
         updated_at: new Date().toISOString()
       };
 
+      const currentItem = items.find(i => i.id === itemId);
+
       // Reset PO details if moved back to Pending
       if (nextStatus === 'Pending') {
         updates.po_date = null;
         updates.credit_term = null;
         updates.budget_due_date = null;
+      } else if (nextStatus === 'Purchasing' || nextStatus === 'Issuing Item') {
+        if (currentItem) {
+          // If it doesn't have a PO date, default to today
+          const finalPoDate = currentItem.po_date || new Date().toISOString().substring(0, 10);
+          // If it doesn't have a credit term, default to 30 days
+          const finalCreditTerm = currentItem.credit_term || 30;
+          // Calculate budget due date
+          const calculatedDueDate = calculateDueDate(finalPoDate, finalCreditTerm);
+          
+          updates.po_date = finalPoDate;
+          updates.credit_term = finalCreditTerm;
+          updates.budget_due_date = calculatedDueDate;
+        }
       }
 
       const { error } = await supabase
@@ -109,9 +219,25 @@ export default function DashboardPage() {
         .eq('id', itemId);
 
       if (error) throw error;
+
+      return { 
+        title: currentItem?.title || '', 
+        nextStatus, 
+        calculatedDueDate: updates.budget_due_date, 
+        creditTerm: updates.credit_term 
+      };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['items'] });
+      if (data?.calculatedDueDate) {
+        const dateStr = new Date(data.calculatedDueDate).toLocaleDateString('th-TH', { dateStyle: 'medium' });
+        showToast(`อัปเดตเครดิต ${data.creditTerm} วันสำเร็จ! ครบกำหนดชำระจริงวันที่: ${dateStr}`);
+      } else {
+        const statusName = 
+          data?.nextStatus === 'Pending' ? 'กำลังดำเนินการ' :
+          data?.nextStatus === 'Purchasing' ? 'ติดต่อจัดซื้อ' : 'กำลังออก ITEM';
+        showToast(`ย้ายสถานะเป็น "${statusName}" เรียบร้อยแล้ว`);
+      }
     },
   });
 
@@ -279,11 +405,20 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {columns.map((column) => {
             const columnItems = filteredItems.filter((item) => item.status === column.status);
+            const isColumnHovered = activeDragColumn === column.status;
             
             return (
               <div 
                 key={column.status} 
-                className="flex flex-col rounded-2xl bg-slate-100/40 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-800/50 min-h-[60vh] p-4"
+                onDragOver={handleDragOver}
+                onDragEnter={(e) => handleDragEnter(e, column.status)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, column.status)}
+                className={`flex flex-col rounded-2xl min-h-[60vh] p-4 transition-all duration-200 ${
+                  isColumnHovered
+                    ? 'bg-violet-500/5 dark:bg-violet-500/10 border-2 border-dashed border-violet-500/40'
+                    : 'bg-slate-100/40 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-800/50'
+                }`}
               >
                 {/* Column Title */}
                 <div className="mb-4 pb-3 border-b border-slate-200 dark:border-slate-800/50 flex items-center justify-between">
@@ -308,19 +443,39 @@ export default function DashboardPage() {
                     columnItems.map((item) => (
                       <div 
                         key={item.id} 
-                        className={`group relative backdrop-blur-sm bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-800/80 rounded-xl p-4 shadow-sm hover:shadow-md dark:shadow-none hover:border-slate-400 dark:hover:border-slate-700/80 transition-all duration-200 flex flex-col justify-between gap-3`}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, item.id)}
+                        className={`group relative backdrop-blur-sm bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-800/80 rounded-xl p-4 shadow-sm hover:shadow-md dark:shadow-none hover:border-slate-400 dark:hover:border-slate-700/80 transition-all duration-200 flex flex-col justify-between gap-3 cursor-grab active:cursor-grabbing`}
                       >
-                        {/* Image Preview (Optional) */}
+                        {/* Image or File Attachment Preview */}
                         {item.image_url && (
-                          <div className="relative w-full h-36 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 mb-2 shrink-0">
-                            <Image
-                              src={item.image_url}
-                              alt={item.title}
-                              fill
-                              sizes="(max-width: 768px) 100vw, 30vw"
-                              className="object-cover transition-transform duration-300 group-hover:scale-102"
-                            />
-                          </div>
+                          isImageFile(item.image_url) ? (
+                            <div className="relative w-full h-36 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 mb-2 shrink-0">
+                              <Image
+                                src={item.image_url}
+                                alt={item.title}
+                                fill
+                                sizes="(max-width: 768px) 100vw, 30vw"
+                                className="object-cover transition-transform duration-300 group-hover:scale-102"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 mb-2 shrink-0">
+                              <FileText className="w-6 h-6 text-violet-500 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-[9px] text-slate-500 uppercase font-extrabold leading-none">เอกสารแนบ</p>
+                                <a 
+                                  href={item.image_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:underline truncate block mt-1"
+                                >
+                                  เปิดดูไฟล์แนบ
+                                </a>
+                              </div>
+                            </div>
+                          )
                         )}
 
                         {/* Title and Description */}
@@ -429,6 +584,14 @@ export default function DashboardPage() {
           userId={user.id}
           itemToEdit={selectedItem}
         />
+      )}
+
+      {/* Toast Alert */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-white shadow-2xl animate-slide-in backdrop-blur-md">
+          <div className={`w-2 h-2 rounded-full ${toast.type === 'success' ? 'bg-emerald-500 animate-pulse' : 'bg-violet-500 animate-pulse'}`} />
+          <span className="text-xs font-semibold leading-relaxed">{toast.message}</span>
+        </div>
       )}
     </div>
   );

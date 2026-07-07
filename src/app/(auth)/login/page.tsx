@@ -2,9 +2,9 @@
 
 import { useAuth } from '@/components/providers/auth-provider';
 import { useState, Suspense } from 'react';
-import { ClipboardList, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-
+import Image from 'next/image';
 
 function LoginContent() {
   const { signInWithGoogle, loading: authLoading } = useAuth();
@@ -41,8 +41,8 @@ function LoginContent() {
           
           {/* Logo / Branding */}
           <div className="flex flex-col items-center text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-4 animate-pulse">
-              <ClipboardList className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-100 flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-4 animate-pulse">
+              <Image src="/Logo.png" alt="Logo" width={64} height={64} className="object-cover" />
             </div>
             <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-violet-400 via-indigo-200 to-emerald-400 bg-clip-text text-transparent">
               จำจด • JumJod
@@ -97,8 +97,8 @@ export default function LoginPage() {
   return (
     <Suspense fallback={
       <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-slate-950 px-4">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
-          <ClipboardList className="w-8 h-8 text-white" />
+        <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-150 flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
+          <Image src="/Logo.png" alt="Logo" width={64} height={64} className="object-cover" />
         </div>
       </div>
     }>

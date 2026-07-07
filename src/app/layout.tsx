@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "JumJod (จำจด) - Procurement & Budget Planning Assistant",
+  title: "JumJod (จำจด)",
   description: "Smart task tracking and memory assistant for financial procurement planning.",
 };
 
