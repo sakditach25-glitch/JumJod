@@ -24,17 +24,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navItems = [
     {
-      name: 'บอร์ดรายการ (Dashboard)',
+      name: 'บอร์ดรายการ',
       href: '/dashboard',
       icon: ClipboardList,
     },
     {
-      name: 'ปฏิทินแผนงบ (Calendar)',
+      name: 'ปฏิทิน',
       href: '/calendar',
       icon: Calendar,
     },
     {
-      name: 'รายการสำเร็จ (Completed)',
+      name: 'รายการสำเร็จ',
       href: '/completed',
       icon: CheckSquare,
     },

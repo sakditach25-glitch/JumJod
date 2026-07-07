@@ -164,6 +164,7 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('items')
         .select('*')
+        .neq('status', 'Issuing Item') // Exclude completed items from dashboard
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -292,13 +293,6 @@ export default function DashboardPage() {
       colorClass: 'text-violet-600 dark:text-violet-400 bg-violet-500/10',
       borderClass: 'border-violet-500/20',
     },
-    {
-      status: 'Issuing Item',
-      title: 'กำลังออก ITEM (Issuing Item)',
-      subtitle: 'ออกรหัส ITEM / รอจัดส่งมอบงาน',
-      colorClass: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
-      borderClass: 'border-emerald-500/20',
-    },
   ];
 
   return (
@@ -402,7 +396,7 @@ export default function DashboardPage() {
           <p className="text-xs text-slate-500 dark:text-slate-400">{(error as any)?.message || 'โปรดตรวจสอบสิทธิ์เชื่อมต่อหรือรีเฟรชหน้าเว็บ'}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {columns.map((column) => {
             const columnItems = filteredItems.filter((item) => item.status === column.status);
             const isColumnHovered = activeDragColumn === column.status;
@@ -500,9 +494,9 @@ export default function DashboardPage() {
                             </div>
                           )}
 
-                          {/* PO details (Purchasing / Issuing stage) */}
+                          {/* PO Date Badge */}
                           {item.po_date && (
-                            <div className="flex items-center gap-1.5 text-[10px] text-violet-650 dark:text-violet-400 bg-violet-500/5 px-2 py-0.5 rounded-md w-fit font-semibold border border-violet-500/10">
+                            <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-400 bg-violet-500/5 px-2 py-0.5 rounded-md w-fit font-semibold border border-violet-500/10">
                               <FileText className="w-3.5 h-3.5" />
                               <span>PO: {new Date(item.po_date).toLocaleDateString('th-TH', { dateStyle: 'short' })}</span>
                             </div>
@@ -518,54 +512,33 @@ export default function DashboardPage() {
 
                           {/* Budget Due Date Badge */}
                           {item.budget_due_date && (
-                            <div className="flex items-center gap-1.5 text-[10px] text-emerald-650 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md w-fit font-extrabold border border-emerald-500/20">
+                            <div className="flex items-center gap-1.5 text-[10px] text-emerald-650 dark:text-emerald-450 bg-emerald-500/10 px-2 py-0.5 rounded-md w-fit font-extrabold border border-emerald-500/20">
                               <Calendar className="w-3.5 h-3.5" />
                               <span>วันครบกำหนด: {new Date(item.budget_due_date).toLocaleDateString('th-TH', { dateStyle: 'short' })}</span>
                             </div>
                           )}
                         </div>
 
-                        {/* Controls & Quick Actions */}
-                        <div className="flex items-center justify-between mt-1 pt-1.5">
-                          {/* Quick pipeline shifting */}
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleMoveStatus(item, 'left')}
-                              disabled={column.status === 'Pending'}
-                              className="p-1 rounded-md bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700/80 disabled:opacity-30 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:pointer-events-none transition-colors cursor-pointer"
-                              title="ย้ายกลับคอลัมน์ก่อนหน้า"
-                            >
-                              <ArrowLeft className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleMoveStatus(item, 'right')}
-                              disabled={column.status === 'Issuing Item'}
-                              className="p-1 rounded-md bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700/80 disabled:opacity-30 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:pointer-events-none transition-colors cursor-pointer"
-                              title="เลื่อนคอลัมน์ถัดไป"
-                            >
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-
+                        {/* Controls & Actions */}
+                        <div className="flex items-center justify-end mt-1 pt-1.5 border-t border-slate-100 dark:border-slate-800/40">
                           {/* CRUD Actions */}
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => handleEditItem(item)}
-                              className="p-1 rounded-md bg-slate-100 dark:bg-slate-800/50 hover:bg-violet-100 dark:hover:bg-violet-600/30 text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-300 transition-colors cursor-pointer"
+                              className="p-1 rounded-md bg-slate-100 dark:bg-slate-800/50 hover:bg-violet-100 dark:hover:bg-violet-650/30 text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-300 transition-colors cursor-pointer"
                               title="แก้ไขรายการ"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => handleDeleteItem(item.id)}
-                              className="p-1 rounded-md bg-slate-100 dark:bg-slate-800/50 hover:bg-red-100 dark:hover:bg-red-650/30 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+                              className="p-1 rounded-md bg-slate-100 dark:bg-slate-800/50 hover:bg-red-100 dark:hover:bg-red-650/30 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-450 transition-colors cursor-pointer"
                               title="ลบรายการ"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
-
                       </div>
                     ))
                   )}
