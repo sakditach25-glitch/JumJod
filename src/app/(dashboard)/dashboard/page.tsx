@@ -28,6 +28,18 @@ export default function DashboardPage() {
   // Drag-and-Drop & Toast states
   const [activeDragColumn, setActiveDragColumn] = useState<ItemStatus | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+  const [auditedItems, setAuditedItems] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const saved = localStorage.getItem('audited_items');
+    if (saved) {
+      try {
+        setAuditedItems(JSON.parse(saved));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
 
   const showToast = (message: string, type: 'success' | 'info' = 'success') => {
     setToast({ message, type });
@@ -164,7 +176,6 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('items')
         .select('*')
-        .neq('status', 'Issuing Item') // Exclude completed items from dashboard
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -271,11 +282,12 @@ export default function DashboardPage() {
     }
   };
 
-  // Filter items by search query
+  // Filter items by search query and exclude audited items
   const filteredItems = items.filter(
     (item) =>
-      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+      !auditedItems[item.id] &&
+      (item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())))
   );
 
   const columns: { status: ItemStatus; title: string; subtitle: string; colorClass: string; borderClass: string }[] = [
@@ -292,6 +304,13 @@ export default function DashboardPage() {
       subtitle: 'ประสานงาน PO / เลือกเงื่อนไขเครดิต',
       colorClass: 'text-violet-600 dark:text-violet-400 bg-violet-500/10',
       borderClass: 'border-violet-500/20',
+    },
+    {
+      status: 'Issuing Item',
+      title: 'กำลังออก ITEM (Issuing Item)',
+      subtitle: 'ออกรหัส ITEM / รอจัดส่งมอบงาน',
+      colorClass: 'text-emerald-600 dark:text-emerald-450 bg-emerald-500/10',
+      borderClass: 'border-emerald-500/20',
     },
   ];
 
@@ -396,7 +415,7 @@ export default function DashboardPage() {
           <p className="text-xs text-slate-500 dark:text-slate-400">{(error as any)?.message || 'โปรดตรวจสอบสิทธิ์เชื่อมต่อหรือรีเฟรชหน้าเว็บ'}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {columns.map((column) => {
             const columnItems = filteredItems.filter((item) => item.status === column.status);
             const isColumnHovered = activeDragColumn === column.status;
