@@ -9,7 +9,7 @@ import ItemModal from '@/components/dashboard/item-modal';
 import {
   Plus, Search, Edit2, Trash2, Calendar,
   ArrowRight, ArrowLeft, Image as ImageIcon,
-  FileText, Clock, CreditCard, ChevronRight, AlertCircle
+  FileText, Clock, CreditCard, ChevronRight, AlertCircle, CheckCircle2
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -266,6 +266,27 @@ export default function DashboardPage() {
   const handleDeleteItem = (itemId: string) => {
     if (confirm('คุณต้องการลบรายการจัดซื้อนี้ใช่หรือไม่?')) {
       deleteMutation.mutate(itemId);
+    }
+  };
+
+  const handleCompleteItem = (item: Item) => {
+    if (confirm(`คุณต้องการบันทึกความสำเร็จรายการ "${item.title}" ใช่หรือไม่?\n(รายการจะถูกย้ายไปยังหน้าประวัติสำเร็จ)`)) {
+      moveStatusMutation.mutate(
+        { itemId: item.id, nextStatus: 'Issuing Item' },
+        {
+          onSuccess: () => {
+            const saved = localStorage.getItem('audited_items');
+            let audited: Record<string, boolean> = {};
+            if (saved) {
+              try { audited = JSON.parse(saved); } catch (e) {}
+            }
+            audited[item.id] = true;
+            localStorage.setItem('audited_items', JSON.stringify(audited));
+            setAuditedItems(audited);
+            showToast(`🎉 ยินดีด้วย! บันทึกความสำเร็จรายการ "${item.title}" เรียบร้อยแล้ว`);
+          }
+        }
+      );
     }
   };
 
@@ -541,6 +562,13 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-end mt-1 pt-1.5 border-t border-slate-100 dark:border-slate-800/40">
                           {/* CRUD Actions */}
                           <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleCompleteItem(item)}
+                              className="p-1 rounded-md bg-slate-100 dark:bg-slate-800/50 hover:bg-emerald-100 dark:hover:bg-emerald-650/30 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-450 transition-colors cursor-pointer"
+                              title="ทำเครื่องหมายว่าสำเร็จ"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() => handleEditItem(item)}
                               className="p-1 rounded-md bg-slate-100 dark:bg-slate-800/50 hover:bg-violet-100 dark:hover:bg-violet-650/30 text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-300 transition-colors cursor-pointer"
