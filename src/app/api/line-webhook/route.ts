@@ -54,6 +54,27 @@ async function sendLineReply(replyToken: string, content: string | any) {
   }
 }
 
+async function showLineLoadingAnimation(chatId: string) {
+  const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!channelAccessToken) return;
+
+  try {
+    await fetch('https://api.line.me/v2/bot/chat/loading/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${channelAccessToken}`,
+      },
+      body: JSON.stringify({
+        chatId,
+        loadingSeconds: 5,
+      }),
+    });
+  } catch (error) {
+    console.error('Failed to start LINE loading animation:', error);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const rawBody = await request.text();
@@ -83,6 +104,9 @@ export async function POST(request: Request) {
       const messageText = event.message.text.trim();
 
       if (!replyToken || !lineUserId) continue;
+
+      // Trigger LINE typing/loading animation immediately in the background
+      showLineLoadingAnimation(lineUserId).catch(console.error);
 
       // 1. Link LINE accounts via link code (#link CODE)
       const linkMatch = messageText.match(/^#link\s+(\w+)/i);
