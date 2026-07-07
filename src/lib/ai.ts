@@ -58,26 +58,21 @@ function getGeminiApiKey(): string | undefined {
 }
 
 /**
- * Classifies the user's message intent and extracts necessary fields using Google Gemini AI.
- * Falls back to a robust regex parser if API keys are missing or calls fail.
- * 
- * @param messageText User message sent to the LINE Bot
- * @param existingItems List of the user's current items for context matching
+ * Helper to call Gemini API with a specific model and optional thinking configuration.
  */
-export async function classifyAndParseMessageWithAI(
+async function callGeminiWithModel(
+  modelName: string,
+  apiKey: string,
   messageText: string,
-  existingItems: any[]
-): Promise<GeminiParsedOutput> {
-  const apiKey = getGeminiApiKey();
-  if (apiKey) {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `You are an AI data parser for JodJum (จำจด) - a procurement planner system.
+  existingItems: any[],
+  thinkingConfig?: { thinkingBudget?: number; thinkingLevel?: string }
+): Promise<GeminiParsedOutput | null> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+  
+  const body: any = {
+    contents: [{
+      parts: [{
+        text: `You are an AI data parser for JodJum (จำจด) - a procurement planner system.
 Today is ${new Date().toISOString().substring(0, 10)}.
 Analyze this message from the user: "${messageText}"
 
@@ -114,33 +109,85 @@ Format the output strictly as a JSON object:
     "status": "Pending" | "Purchasing" | "Issuing Item"
   },
   "message": "string (for UNKNOWN intent, friendly help guide on how they can command the bot, e.g. how to add, search, edit, delete, or complete)"
+}`
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json"
+    }
+  };
+
+  if (thinkingConfig) {
+    body.generationConfig.thinkingConfig = thinkingConfig;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    console.error(`Gemini API error for model ${modelName}: status ${response.status}`);
+    return null;
+  }
+
+  const data = await response.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!rawText) return null;
+
+  const parsed = JSON.parse(rawText.trim()) as GeminiParsedOutput;
+
+  // Ensure budget due date is calculated if credit term is set
+  if (parsed.intent === 'CREATE' && parsed.create_data) {
+    if (parsed.create_data.credit_term && !parsed.create_data.budget_due_date) {
+      parsed.create_data.po_date = parsed.create_data.po_date || new Date().toISOString().substring(0, 10);
+      parsed.create_data.budget_due_date = calculateDueDate(parsed.create_data.po_date, parsed.create_data.credit_term);
+    }
+  }
+
+  return parsed;
 }
-Return ONLY raw JSON. Do NOT wrap in markdown code blocks like \`\`\`json.`
-            }]
-          }]
-        })
-      });
 
-      if (response.ok) {
-        const data = await response.json();
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const cleanJson = rawText.replace(/```json/i, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleanJson) as GeminiParsedOutput;
-
-        // Ensure budget due date is calculated if credit term is set
-        if (parsed.intent === 'CREATE' && parsed.create_data) {
-          if (parsed.create_data.credit_term && !parsed.create_data.budget_due_date) {
-            parsed.create_data.po_date = parsed.create_data.po_date || new Date().toISOString().substring(0, 10);
-            parsed.create_data.budget_due_date = calculateDueDate(parsed.create_data.po_date, parsed.create_data.credit_term);
-          }
-        }
-
-        return parsed;
-      } else {
-        console.error('Gemini API error status:', response.status);
-      }
+/**
+ * Classifies the user's message intent and extracts necessary fields using Google Gemini AI.
+ * Falls back to a robust regex parser if API keys are missing or calls fail.
+ * 
+ * @param messageText User message sent to the LINE Bot
+ * @param existingItems List of the user's current items for context matching
+ */
+export async function classifyAndParseMessageWithAI(
+  messageText: string,
+  existingItems: any[]
+): Promise<GeminiParsedOutput> {
+  const apiKey = getGeminiApiKey();
+  if (apiKey) {
+    // 1. Try gemini-2.5-flash with thinkingBudget = 0 first (fastest, no reasoning latency)
+    try {
+      const parsed = await callGeminiWithModel(
+        'gemini-2.5-flash',
+        apiKey,
+        messageText,
+        existingItems,
+        { thinkingBudget: 0 }
+      );
+      if (parsed) return parsed;
     } catch (err) {
-      console.error('Gemini classification error, falling back to Regex NLP:', err);
+      console.error('gemini-2.5-flash failed, trying fallback:', err);
+    }
+
+    // 2. Fallback to gemini-3.5-flash with thinkingLevel = LOW (higher latency but newer model)
+    try {
+      const parsed = await callGeminiWithModel(
+        'gemini-3.5-flash',
+        apiKey,
+        messageText,
+        existingItems,
+        { thinkingLevel: 'LOW' }
+      );
+      if (parsed) return parsed;
+    } catch (err) {
+      console.error('gemini-3.5-flash fallback failed:', err);
     }
   }
 

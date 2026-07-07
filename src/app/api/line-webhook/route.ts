@@ -75,6 +75,31 @@ async function showLineLoadingAnimation(chatId: string) {
   }
 }
 
+async function markLineMessagesAsRead(markAsReadToken: string) {
+  const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!channelAccessToken) return;
+
+  try {
+    const response = await fetch('https://api.line.me/v2/bot/chat/markAsRead', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${channelAccessToken}`,
+      },
+      body: JSON.stringify({
+        markAsReadToken,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Error marking LINE messages as read:', errorData);
+    }
+  } catch (error) {
+    console.error('Failed to mark LINE messages as read:', error);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const rawBody = await request.text();
@@ -95,18 +120,99 @@ export async function POST(request: Request) {
     const events = payload.events || [];
 
     for (const event of events) {
-      if (event.type !== 'message' || event.message.type !== 'text') {
-        continue;
-      }
-
       const replyToken = event.replyToken;
       const lineUserId = event.source.userId;
-      const messageText = event.message.text.trim();
+      const messageText = event.type === 'message' && event.message.type === 'text' ? event.message.text.trim() : '';
+      const markAsReadToken = event.markAsReadToken;
 
       if (!replyToken || !lineUserId) continue;
 
       // Trigger LINE typing/loading animation immediately in the background
       showLineLoadingAnimation(lineUserId).catch(console.error);
+
+      // Mark messages as read in the background
+      if (markAsReadToken) {
+        markLineMessagesAsRead(markAsReadToken).catch(console.error);
+      }
+
+      // A. Postback Event handling (stateless actions: complete or delete)
+      if (event.type === 'postback') {
+        try {
+          const params = new URLSearchParams(event.postback.data);
+          const action = params.get('action');
+          const itemId = params.get('itemId');
+
+          if (!itemId) continue;
+
+          if (action === 'complete') {
+            const { data: item, error: fetchError } = await supabaseAdmin
+              .from('items')
+              .select('title, po_date, credit_term')
+              .eq('id', itemId)
+              .single();
+
+            if (fetchError || !item) {
+              await sendLineReply(replyToken, '❌ ไม่พบรายการจัดซื้อนี้ หรืออาจถูกลบไปแล้ว');
+              continue;
+            }
+
+            const finalPoDate = item.po_date || new Date().toISOString().substring(0, 10);
+            const finalCreditTerm = item.credit_term || 30;
+            const calculatedDueDate = calculateDueDate(finalPoDate, finalCreditTerm);
+
+            const { error: completeError } = await supabaseAdmin
+              .from('items')
+              .update({
+                status: 'Issuing Item',
+                po_date: finalPoDate,
+                credit_term: finalCreditTerm,
+                budget_due_date: calculatedDueDate,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', itemId);
+
+            if (completeError) {
+              await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการบันทึกข้อมูลสำเร็จ');
+            } else {
+              const formattedDate = new Date(calculatedDueDate!).toLocaleDateString('th-TH', { dateStyle: 'medium' });
+              await sendLineReply(
+                replyToken, 
+                `🎉 บันทึกสำเร็จแล้ว!\nอัปเดตรายการ "${item.title}" เป็น "สำเร็จ (ออก ITEM)" เรียบร้อยแล้ว\n📅 วันครบกำหนดชำระ: ${formattedDate}\n*รายการนี้จะย้ายจากบอร์ดไปแสดงที่หน้า 'รายการสำเร็จ' ทันที*`
+              );
+            }
+          } else if (action === 'delete') {
+            const { data: item, error: fetchError } = await supabaseAdmin
+              .from('items')
+              .select('title')
+              .eq('id', itemId)
+              .single();
+
+            if (fetchError || !item) {
+              await sendLineReply(replyToken, '❌ ไม่พบรายการจัดซื้อนี้ หรืออาจถูกลบไปแล้ว');
+              continue;
+            }
+
+            const { error: deleteError } = await supabaseAdmin
+              .from('items')
+              .delete()
+              .eq('id', itemId);
+
+            if (deleteError) {
+              await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการลบรายการจัดซื้อ');
+            } else {
+              await sendLineReply(replyToken, `🗑️ ลบรายการ "${item.title}" เรียบร้อยแล้วครับ!`);
+            }
+          }
+        } catch (error) {
+          console.error('Error handling postback:', error);
+          await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการประมวลผลคำสั่ง');
+        }
+        continue;
+      }
+
+      if (event.type !== 'message' || event.message.type !== 'text') {
+        continue;
+      }
 
       // 1. Link LINE accounts via link code (#link CODE)
       const linkMatch = messageText.match(/^#link\s+(\w+)/i);
@@ -177,85 +283,7 @@ export async function POST(request: Request) {
         .limit(30);
       const existingItems = itemsData || [];
 
-      // 3. Stateful Conversation Check (Check if user has a pending item flow)
-      const pendingData = profile.pending_item_data || memoryStateCache.get(lineUserId);
-
-      if (pendingData) {
-        const choice = messageText.toUpperCase();
-        
-        if (choice === 'PR' || choice === '1' || choice.includes('พีอาร์')) {
-          const status: ItemStatus = pendingData.credit_term ? 'Purchasing' : 'Pending';
-          
-          const { error: insertError } = await supabaseAdmin.from('items').insert([
-            {
-              user_id: profile.id,
-              title: pendingData.title,
-              description: pendingData.description,
-              status,
-              reminder_date: pendingData.reminder_date,
-              po_date: pendingData.po_date,
-              credit_term: pendingData.credit_term,
-              budget_due_date: pendingData.budget_due_date,
-            },
-          ]);
-
-          if (insertError) {
-            console.error('Error inserting item from LINE:', insertError);
-            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
-          } else {
-            let replyText = `✅ บันทึกเป็น "PR (ใบขอซื้อ)" สำเร็จ!\nรายการ: "${pendingData.title}"`;
-            if (pendingData.credit_term && pendingData.budget_due_date) {
-              const formattedDate = new Date(pendingData.budget_due_date).toLocaleDateString('th-TH', { dateStyle: 'medium' });
-              replyText += `\n💵 เครดิต: ${pendingData.credit_term} วัน\n📅 วันชำระเงินจริง: ${formattedDate} (คำนวณจากวันที่เริ่มออก)`;
-            }
-            await sendLineReply(replyToken, replyText);
-          }
-
-          await supabaseAdmin.from('profiles').update({ pending_item_data: null }).eq('id', profile.id);
-          memoryStateCache.delete(lineUserId);
-
-        } else if (choice === 'ITEM' || choice === '2' || choice.includes('ไอเทม')) {
-          const status: ItemStatus = 'Issuing Item';
-          
-          const { error: insertError } = await supabaseAdmin.from('items').insert([
-            {
-              user_id: profile.id,
-              title: pendingData.title,
-              description: pendingData.description,
-              status,
-              reminder_date: pendingData.reminder_date,
-              po_date: pendingData.po_date || new Date().toISOString().substring(0, 10),
-              credit_term: pendingData.credit_term || 30,
-              budget_due_date: pendingData.budget_due_date || calculateDueDate(new Date().toISOString().substring(0, 10), 30),
-            },
-          ]);
-
-          if (insertError) {
-            console.error('Error inserting item from LINE:', insertError);
-            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
-          } else {
-            const finalDueDate = pendingData.budget_due_date || calculateDueDate(new Date().toISOString().substring(0, 10), 30);
-            const formattedDate = new Date(finalDueDate!).toLocaleDateString('th-TH', { dateStyle: 'medium' });
-            
-            let replyText = `✅ บันทึกเป็น "ITEM (รายการสำเร็จ)" สำเร็จ!\nรายการ: "${pendingData.title}"\n📅 วันครบกำหนดชำระ: ${formattedDate}\n*รายการนี้จะแสดงเฉพาะในหน้า 'รายการสำเร็จ' เท่านั้น*`;
-            await sendLineReply(replyToken, replyText);
-          }
-
-          await supabaseAdmin.from('profiles').update({ pending_item_data: null }).eq('id', profile.id);
-          memoryStateCache.delete(lineUserId);
-
-        } else if (choice === 'ยกเลิก' || choice === 'CANCEL' || choice === '3') {
-          await supabaseAdmin.from('profiles').update({ pending_item_data: null }).eq('id', profile.id);
-          memoryStateCache.delete(lineUserId);
-          await sendLineReply(replyToken, '❌ ยกเลิกการบันทึกรายการจัดซื้อเรียบร้อยแล้ว');
-        } else {
-          await sendLineReply(
-            replyToken,
-            `⚠️ คำสั่งไม่ถูกต้อง\n\nกรุณาพิมพ์ตอบ 'PR' เพื่อบันทึกเป็นใบขอซื้อ หรือ 'ITEM' เพื่อบันทึกเป็นรายการสำเร็จ (หรือพิมพ์ 'ยกเลิก' เพื่อยกเลิก)`
-          );
-        }
-        continue;
-      }
+      // 3. (Stateful Check Removed - We now save immediately and use stateless postbacks)
 
       // 4. Initial Request intent classification using AI
       console.log(`[LINE BOT] Classifying user query: "${messageText}"`);
@@ -408,25 +436,46 @@ export async function POST(request: Request) {
         default: {
           const createData = parsedResult.create_data;
           if (!createData) {
-            await sendLineReply(replyToken, '❌ ไม่เข้าใจคำสั่งซื้อ กรุณาลองพิมข้อความใหม่อีกครั้ง');
+            await sendLineReply(replyToken, '❌ ไม่เข้าใจคำสั่งซื้อ กรุณาลองพิมพ์ข้อความใหม่อีกครั้ง');
             continue;
           }
 
-          // Save pending state in DB and cache
-          const { error: saveStateError } = await supabaseAdmin
-            .from('profiles')
-            .update({ pending_item_data: createData })
-            .eq('id', profile.id);
+          // Determine initial status based on credit_term
+          const status: ItemStatus = createData.credit_term ? 'Purchasing' : 'Pending';
 
-          if (saveStateError) {
-            console.warn('Failed to save pending state in profiles:', saveStateError.message);
+          // Insert directly into items table
+          const { data: insertedItem, error: insertError } = await supabaseAdmin
+            .from('items')
+            .insert([
+              {
+                user_id: profile.id,
+                title: createData.title,
+                description: createData.description || `บันทึกผ่าน LINE Bot: ${messageText}`,
+                status,
+                reminder_date: createData.reminder_date,
+                po_date: createData.po_date,
+                credit_term: createData.credit_term,
+                budget_due_date: createData.budget_due_date,
+              },
+            ])
+            .select('id')
+            .single();
+
+          if (insertError || !insertedItem) {
+            console.error('Error inserting item from LINE:', insertError);
+            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+            continue;
           }
-          memoryStateCache.set(lineUserId, createData);
 
-          // Reply with LINE Flex Message Confirmation
+          // Get the dynamic origin for linking to the dashboard
+          const requestUrl = new URL(request.url);
+          const appUrl = requestUrl.origin;
+
+          // Reply with LINE Flex Message confirming success and offering postback actions
+          const formattedStatus = status === 'Purchasing' ? 'กำลังดำเนินการ (PR/เครดิต)' : 'กำลังดำเนินการ (PR)';
           const flexMessage = {
             type: 'flex',
-            altText: 'ยืนยันประเภทการบันทึกรายการจัดซื้อ',
+            altText: `บันทึกรายการจัดซื้อ "${createData.title}" สำเร็จ`,
             contents: {
               type: 'bubble',
               body: {
@@ -435,10 +484,10 @@ export async function POST(request: Request) {
                 contents: [
                   {
                     type: 'text',
-                    text: '📌 ช่วยจำรายการจัดซื้อ',
+                    text: '✅ บันทึกรายการจัดซื้อแล้ว',
                     weight: 'bold',
                     size: 'md',
-                    color: '#7c3aed'
+                    color: '#10b981'
                   },
                   {
                     type: 'text',
@@ -448,6 +497,13 @@ export async function POST(request: Request) {
                     margin: 'md',
                     wrap: true,
                     color: '#1e293b'
+                  },
+                  {
+                    type: 'text',
+                    text: `สถานะ: ${formattedStatus}`,
+                    size: 'xs',
+                    color: '#4b5563',
+                    margin: 'xs'
                   },
                   {
                     type: 'text',
@@ -461,14 +517,6 @@ export async function POST(request: Request) {
                   {
                     type: 'separator',
                     margin: 'lg'
-                  },
-                  {
-                    type: 'text',
-                    text: 'ต้องการออกรายการนี้ในรูปแบบใด?',
-                    size: 'xs',
-                    color: '#64748b',
-                    margin: 'md',
-                    weight: 'semibold'
                   }
                 ]
               },
@@ -481,22 +529,22 @@ export async function POST(request: Request) {
                     type: 'button',
                     style: 'primary',
                     height: 'sm',
-                    color: '#6366f1',
+                    color: '#10b981',
                     action: {
-                      type: 'message',
-                      label: '🔹 บันทึกเป็น PR (ใบขอซื้อ)',
-                      text: 'PR'
+                      type: 'postback',
+                      label: '🔸 เปลี่ยนเป็นสำเร็จ (ITEM)',
+                      data: `action=complete&itemId=${insertedItem.id}`
                     }
                   },
                   {
                     type: 'button',
                     style: 'primary',
                     height: 'sm',
-                    color: '#10b981',
+                    color: '#ef4444',
                     action: {
-                      type: 'message',
-                      label: '🔸 บันทึกเป็น ITEM (สำเร็จ)',
-                      text: 'ITEM'
+                      type: 'postback',
+                      label: '🗑️ ลบรายการนี้',
+                      data: `action=delete&itemId=${insertedItem.id}`
                     }
                   },
                   {
@@ -504,9 +552,9 @@ export async function POST(request: Request) {
                     style: 'link',
                     height: 'sm',
                     action: {
-                      type: 'message',
-                      label: '❌ ยกเลิก',
-                      text: 'ยกเลิก'
+                      type: 'uri',
+                      label: '✏️ แก้ไขรายละเอียดบนเว็บ',
+                      uri: `${appUrl}/dashboard`
                     }
                   }
                 ]
