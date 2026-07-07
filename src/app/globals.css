@@ -27,73 +27,75 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* React Big Calendar Premium Dark Theme Overrides */
+/* React Big Calendar Premium Theme Overrides */
+
+/* 1. Base Styles (Light Mode) */
 .rbc-calendar {
-  color: #e2e8f0; /* slate-200 */
+  color: #334155; /* slate-700 */
 }
 
 .rbc-month-view, .rbc-time-view, .rbc-agenda-view {
-  border: 1px solid #1e293b !important; /* slate-800 */
-  border-radius: 12px;
+  border: 1px solid #e2e8f0 !important; /* slate-200 */
+  border-radius: 16px;
   overflow: hidden;
-  background-color: rgba(15, 23, 42, 0.4); /* slate-900/40 */
-  backdrop-filter: blur(8px);
+  background-color: #ffffff;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
 
 .rbc-header {
-  border-bottom: 1px solid #1e293b !important; /* slate-800 */
+  border-bottom: 1px solid #e2e8f0 !important; /* slate-200 */
   padding: 12px 6px !important;
   font-weight: 700 !important;
   font-size: 0.75rem !important;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #94a3b8 !important; /* slate-400 */
-  background-color: rgba(15, 23, 42, 0.6) !important;
+  color: #475569 !important; /* slate-600 */
+  background-color: #f8fafc !important; /* slate-50 */
 }
 
 .rbc-header + .rbc-header {
-  border-left: 1px solid #1e293b !important;
+  border-left: 1px solid #e2e8f0 !important;
 }
 
 .rbc-day-bg {
-  border-bottom: 1px solid #1e293b !important;
+  border-bottom: 1px solid #e2e8f0 !important;
 }
 
 .rbc-day-bg + .rbc-day-bg {
-  border-left: 1px solid #1e293b !important; /* slate-800 */
+  border-left: 1px solid #e2e8f0 !important;
 }
 
 .rbc-month-row {
-  border-bottom: 1px solid #1e293b !important;
+  border-bottom: 1px solid #e2e8f0 !important;
 }
 
 .rbc-today {
-  background-color: rgba(124, 58, 237, 0.06) !important; /* violet-600/6 */
+  background-color: rgba(124, 58, 237, 0.04) !important; /* violet-600/4 */
 }
 
 .rbc-off-range-bg {
-  background-color: rgba(15, 23, 42, 0.2) !important;
+  background-color: #f8fafc !important; /* slate-50 */
 }
 
 .rbc-event {
-  border-radius: 6px !important;
-  padding: 3px 8px !important;
+  border-radius: 8px !important;
+  padding: 4px 8px !important;
   font-size: 11px !important;
-  font-weight: 700 !important;
+  font-weight: 750 !important;
   border: none !important;
   margin-top: 2px !important;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
 .rbc-event:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
 }
 
 .rbc-show-more {
   font-weight: bold;
-  color: #a78bfa !important; /* violet-400 */
+  color: #6d28d9 !important; /* violet-700 */
   font-size: 10px;
   background: transparent !important;
 }
@@ -102,42 +104,115 @@ body {
   padding: 0 4px 1px 4px !important;
 }
 
-/* Toolbar customization */
+/* Toolbar customization (Light Mode) */
 .rbc-toolbar {
-  margin-bottom: 20px !important;
+  margin-bottom: 24px !important;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .rbc-toolbar-label {
-  font-size: 1.125rem !important;
+  font-size: 1.25rem !important;
   font-weight: 800 !important;
-  color: #f1f5f9 !important; /* slate-100 */
+  color: #0f172a !important; /* slate-900 */
+  letter-spacing: -0.02em;
 }
 
 .rbc-toolbar button {
-  color: #94a3b8 !important; /* slate-400 */
-  border: 1px solid #1e293b !important; /* slate-800 */
-  background-color: rgba(15, 23, 42, 0.5) !important;
-  padding: 6px 16px !important;
+  color: #475569 !important; /* slate-600 */
+  border: 1px solid #e2e8f0 !important; /* slate-200 */
+  background-color: #ffffff !important;
+  padding: 8px 16px !important;
   font-size: 13px !important;
   font-weight: 600 !important;
-  border-radius: 10px !important;
+  border-radius: 12px !important;
   transition: all 0.2s !important;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .rbc-toolbar button:hover {
-  color: #f1f5f9 !important;
-  background-color: #1e293b !important;
-  border-color: #334155 !important;
+  color: #0f172a !important;
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
 }
 
 .rbc-toolbar button:active, .rbc-toolbar button.rbc-active {
-  color: #c084fc !important; /* purple-400 */
-  background-color: rgba(168, 85, 247, 0.1) !important;
-  border-color: rgba(168, 85, 247, 0.4) !important;
+  color: #7c3aed !important; /* violet-600 */
+  background-color: rgba(124, 58, 237, 0.08) !important;
+  border-color: rgba(124, 58, 237, 0.3) !important;
   box-shadow: none !important;
+}
+
+/* 2. Dark Mode Overrides */
+.dark {
+  & .rbc-calendar {
+    color: #e2e8f0; /* slate-200 */
+  }
+
+  & .rbc-month-view, & .rbc-time-view, & .rbc-agenda-view {
+    border: 1px solid #1e293b !important; /* slate-800 */
+    background-color: rgba(15, 23, 42, 0.4); /* slate-900/40 */
+    box-shadow: none;
+  }
+
+  & .rbc-header {
+    border-bottom: 1px solid #1e293b !important; /* slate-800 */
+    color: #94a3b8 !important; /* slate-400 */
+    background-color: rgba(15, 23, 42, 0.6) !important;
+  }
+
+  & .rbc-header + .rbc-header {
+    border-left: 1px solid #1e293b !important;
+  }
+
+  & .rbc-day-bg {
+    border-bottom: 1px solid #1e293b !important;
+  }
+
+  & .rbc-day-bg + .rbc-day-bg {
+    border-left: 1px solid #1e293b !important;
+  }
+
+  & .rbc-month-row {
+    border-bottom: 1px solid #1e293b !important;
+  }
+
+  & .rbc-today {
+    background-color: rgba(124, 58, 237, 0.06) !important; /* violet-600/6 */
+  }
+
+  & .rbc-off-range-bg {
+    background-color: rgba(15, 23, 42, 0.2) !important;
+  }
+
+  & .rbc-show-more {
+    color: #a78bfa !important; /* violet-400 */
+  }
+
+  & .rbc-toolbar-label {
+    color: #f1f5f9 !important; /* slate-100 */
+  }
+
+  & .rbc-toolbar button {
+    color: #94a3b8 !important; /* slate-400 */
+    border: 1px solid #1e293b !important; /* slate-800 */
+    background-color: rgba(15, 23, 42, 0.5) !important;
+    box-shadow: none;
+  }
+
+  & .rbc-toolbar button:hover {
+    color: #f1f5f9 !important;
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+  }
+
+  & .rbc-toolbar button:active, & .rbc-toolbar button.rbc-active {
+    color: #c084fc !important; /* purple-400 */
+    background-color: rgba(168, 85, 247, 0.1) !important;
+    border-color: rgba(168, 85, 247, 0.4) !important;
+  }
 }
 
