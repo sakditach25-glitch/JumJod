@@ -41,10 +41,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen flex bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-200">
-      {/* Sidebar */}
       <aside
         className={`${
-          sidebarOpen ? 'w-64' : 'w-20'
+          sidebarOpen ? 'w-72' : 'w-20'
         } shrink-0 bg-white dark:bg-slate-900/40 border-r border-slate-200 dark:border-slate-800/80 backdrop-blur-md transition-all duration-300 flex flex-col justify-between z-20`}
       >
         <div>
