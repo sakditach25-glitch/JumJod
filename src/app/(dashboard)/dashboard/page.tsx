@@ -20,6 +20,7 @@ export default function DashboardPage() {
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'pr'>('all');
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
@@ -304,12 +305,25 @@ export default function DashboardPage() {
   };
 
   // Filter items by search query and exclude audited items
-  const filteredItems = items.filter(
+  let filteredItems = items.filter(
     (item) =>
       !auditedItems[item.id] &&
       (item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())))
   );
+
+  if (filterType === 'pr') {
+    filteredItems = filteredItems.filter(item => item.is_pr);
+  }
+
+  // PR Summary Statistics
+  const activePrItems = items.filter(item => item.is_pr && !auditedItems[item.id]);
+  const prStats = {
+    total: activePrItems.length,
+    waitingItem: activePrItems.filter(item => !item.has_item_number && item.item_request_status === 'Pending').length,
+    ready: activePrItems.filter(item => item.has_item_number && item.pr_status === 'Ready').length,
+    issued: activePrItems.filter(item => item.pr_status === 'Issued').length,
+  };
 
   const columns: { status: ItemStatus; title: string; subtitle: string; colorClass: string; borderClass: string }[] = [
     {
@@ -409,8 +423,73 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* PR Summary Widget */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in">
+        <div className="backdrop-blur-sm bg-white dark:bg-slate-900/35 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">PR ทั้งหมดค้างทำ</span>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-black text-slate-800 dark:text-white">{prStats.total}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-500">รายการ</span>
+          </div>
+        </div>
+
+        <div className="backdrop-blur-sm bg-white dark:bg-slate-900/35 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">กำลังขอแอด Item ใน AX</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-black text-amber-600 dark:text-amber-400">{prStats.waitingItem}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 font-bold text-amber-600 dark:text-amber-400">รอจัดซื้อ</span>
+          </div>
+        </div>
+
+        <div className="backdrop-blur-sm bg-white dark:bg-slate-900/35 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold text-violet-500 uppercase tracking-wider">พร้อมออก PR (มี Item แล้ว)</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-black text-violet-600 dark:text-violet-400">{prStats.ready}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 font-bold text-violet-600 dark:text-violet-400">พร้อมออก</span>
+          </div>
+        </div>
+
+        <div className="backdrop-blur-sm bg-white dark:bg-slate-900/35 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+          <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">ออก PR สำเร็จ</span>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-450">{prStats.issued}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 font-bold text-emerald-600 dark:text-emerald-450">สำเร็จ</span>
+          </div>
+        </div>
+      </div>
+
       {/* Filter and Search Bar */}
-      <div className="flex items-center gap-3 p-3 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 rounded-2xl backdrop-blur-sm shadow-sm">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 p-3 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 rounded-2xl backdrop-blur-sm shadow-sm">
+        {/* Tab switcher */}
+        <div className="flex bg-slate-105 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
+          <button
+            onClick={() => setFilterType('all')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              filterType === 'all'
+                ? 'bg-white dark:bg-slate-900 text-violet-600 dark:text-violet-400 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+            }`}
+          >
+            รายการทั้งหมด
+          </button>
+          <button
+            onClick={() => setFilterType('pr')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              filterType === 'pr'
+                ? 'bg-white dark:bg-slate-900 text-violet-600 dark:text-violet-400 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+            }`}
+          >
+            เฉพาะรายการ PR
+          </button>
+        </div>
+
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
           <input
@@ -478,7 +557,7 @@ export default function DashboardPage() {
                         key={item.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, item.id)}
-                        className={`group relative backdrop-blur-sm bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-800/80 rounded-xl p-4 shadow-sm hover:shadow-md dark:shadow-none hover:border-slate-400 dark:hover:border-slate-700/80 transition-all duration-200 flex flex-col justify-between gap-3 cursor-grab active:cursor-grabbing`}
+                        className="group relative backdrop-blur-sm bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-800/80 rounded-xl p-4 shadow-sm hover:shadow-md dark:shadow-none hover:border-slate-400 dark:hover:border-slate-700/80 transition-all duration-200 flex flex-col justify-between gap-3 cursor-grab active:cursor-grabbing"
                       >
                         {/* Image or File Attachment Preview */}
                         {item.image_url && (
@@ -513,9 +592,14 @@ export default function DashboardPage() {
 
                         {/* Title and Description */}
                         <div>
-                          <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200 group-hover:text-violet-600 dark:group-hover:text-violet-300 transition-colors line-clamp-1">
-                            {item.title}
-                          </h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200 group-hover:text-violet-600 dark:group-hover:text-violet-300 transition-colors line-clamp-1 flex-1">
+                              {item.title}
+                            </h4>
+                            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-mono text-[9px] font-extrabold text-slate-500 select-all shrink-0">
+                              #{item.id.substring(item.id.length - 3)}
+                            </span>
+                          </div>
                           {item.description && (
                             <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 line-clamp-2 leading-relaxed">
                               {item.description}
@@ -525,6 +609,44 @@ export default function DashboardPage() {
 
                         {/* Badges and Dates */}
                         <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/40">
+                          {/* PR Badges */}
+                          {item.is_pr && (
+                            <div className="space-y-1.5 pb-1">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-600/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                                🏷️ รายการ PR
+                              </span>
+                              {item.has_item_number ? (
+                                <div className="space-y-1">
+                                  <div className="text-[10px] text-emerald-650 dark:text-emerald-450 bg-emerald-500/10 px-2 py-0.5 rounded-md w-fit font-bold border border-emerald-500/20 flex items-center gap-1">
+                                    <span>📦 Item: {item.item_number || 'มีเลขแล้ว'}</span>
+                                  </div>
+                                  {item.pr_number ? (
+                                    <div className="text-[10px] text-emerald-600 dark:text-emerald-450 bg-emerald-500/5 px-2 py-0.5 rounded-md w-fit font-semibold border border-emerald-500/10 flex items-center gap-1">
+                                      <span>📄 PR #: {item.pr_number} (ออก PR แล้ว)</span>
+                                    </div>
+                                  ) : (
+                                    <div className="text-[10px] text-violet-650 dark:text-violet-400 bg-violet-500/5 px-2 py-0.5 rounded-md w-fit font-semibold border border-violet-500/10 flex items-center gap-1">
+                                      <span>📄 พร้อมออก PR</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div>
+                                  {item.item_request_status === 'Pending' ? (
+                                    <div className="text-[10px] text-amber-650 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md w-fit font-bold border border-amber-500/20 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                      <span>⏳ รอจัดซื้อแอด Item ใน AX</span>
+                                    </div>
+                                  ) : (
+                                    <div className="text-[10px] text-red-650 dark:text-red-400 bg-red-500/5 px-2 py-0.5 rounded-md w-fit font-semibold border border-red-500/10 flex items-center gap-1">
+                                      <span>⚠️ ยังไม่มีเลข Item (ยังไม่ได้แจ้งจัดซื้อ)</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {/* Reminder Badge */}
                           {item.reminder_date && (
                             <div className="flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-500/5 px-2 py-0.5 rounded-md w-fit font-semibold border border-amber-500/10">
@@ -556,6 +678,7 @@ export default function DashboardPage() {
                               <span>วันครบกำหนด: {new Date(item.budget_due_date).toLocaleDateString('th-TH', { dateStyle: 'short' })}</span>
                             </div>
                           )}
+
                         </div>
 
                         {/* Controls & Actions */}

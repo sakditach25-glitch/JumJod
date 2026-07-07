@@ -41,6 +41,14 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
   const [creditTerm, setCreditTerm] = useState<30 | 60 | 90 | null>(null);
   const [budgetDueDate, setBudgetDueDate] = useState<string | null>(null);
 
+  // PR & AX Item States
+  const [isPr, setIsPr] = useState(false);
+  const [hasItemNumber, setHasItemNumber] = useState(false);
+  const [itemNumber, setItemNumber] = useState('');
+  const [itemRequestStatus, setItemRequestStatus] = useState<'None' | 'Pending' | 'Added'>('None');
+  const [prNumber, setPrNumber] = useState('');
+  const [prStatus, setPrStatus] = useState<'Pending' | 'Ready' | 'Issued'>('Pending');
+
   // Image Upload States
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -65,6 +73,14 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
         setExistingImageUrl(itemToEdit.image_url);
         setImagePreview(itemToEdit.image_url);
         setFileName(itemToEdit.image_url ? itemToEdit.image_url.split('/').pop()?.split('-').slice(1).join('-') || 'เอกสารแนบ' : null);
+        
+        // PR fields from DB
+        setIsPr(itemToEdit.is_pr || false);
+        setHasItemNumber(itemToEdit.has_item_number || false);
+        setItemNumber(itemToEdit.item_number || '');
+        setItemRequestStatus(itemToEdit.item_request_status || 'None');
+        setPrNumber(itemToEdit.pr_number || '');
+        setPrStatus(itemToEdit.pr_status || 'Pending');
       } else {
         // Reset form for new item
         setTitle('');
@@ -77,6 +93,14 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
         setExistingImageUrl(null);
         setImagePreview(null);
         setFileName(null);
+        
+        // Reset PR fields
+        setIsPr(false);
+        setHasItemNumber(false);
+        setItemNumber('');
+        setItemRequestStatus('None');
+        setPrNumber('');
+        setPrStatus('Pending');
       }
       setImageFile(null);
       setError(null);
@@ -150,6 +174,12 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
         credit_term: creditTerm,
         budget_due_date: budgetDueDate,
         updated_at: new Date().toISOString(),
+        is_pr: isPr,
+        has_item_number: hasItemNumber,
+        item_number: hasItemNumber ? (itemNumber || null) : null,
+        item_request_status: hasItemNumber ? 'Added' : itemRequestStatus,
+        pr_number: prNumber || null,
+        pr_status: prStatus,
       };
 
       if (itemToEdit) {
@@ -288,6 +318,183 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
               })}
             </div>
           </div>
+
+          {/* PR Toggle Switch */}
+          <div className="flex items-center justify-between p-3.5 rounded-xl border border-slate-800 bg-slate-950/40">
+            <div>
+              <label className="block text-xs font-bold text-slate-250 uppercase tracking-wider">
+                รายการขอซื้อ PR (PR Record)
+              </label>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                เปิดเพื่อบันทึกติดตามการออก PR และขอรหัส Item จากจัดซื้อ
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPr(!isPr)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                isPr ? 'bg-violet-600' : 'bg-slate-800'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  isPr ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* PR Details Section */}
+          {isPr && (
+            <div className="p-4 rounded-xl border border-violet-500/10 bg-violet-950/5 space-y-4 animate-fade-in">
+              <h3 className="text-xs font-bold text-violet-400 uppercase tracking-wider mb-2">
+                ข้อมูลการออก PR และขอรหัส Item (AX)
+              </h3>
+
+              {/* Has Item Number Radio */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1.5 uppercase">
+                  มีเลข Item ในระบบ AX หรือยัง?
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    key="no-item"
+                    type="button"
+                    onClick={() => {
+                      setHasItemNumber(false);
+                      setPrStatus('Pending');
+                    }}
+                    className={`py-2 px-3 border rounded-xl text-xs font-bold transition-all duration-200 ${
+                      !hasItemNumber
+                        ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+                        : 'border-slate-800 text-slate-400 bg-slate-950 hover:bg-slate-900/50'
+                    }`}
+                  >
+                    ยังไม่มีเลข Item
+                  </button>
+                  <button
+                    key="has-item"
+                    type="button"
+                    onClick={() => {
+                      setHasItemNumber(true);
+                      if (prStatus === 'Pending') setPrStatus('Ready');
+                    }}
+                    className={`py-2 px-3 border rounded-xl text-xs font-bold transition-all duration-200 ${
+                      hasItemNumber
+                        ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                        : 'border-slate-800 text-slate-400 bg-slate-950 hover:bg-slate-900/50'
+                    }`}
+                  >
+                    มีเลข Item แล้ว
+                  </button>
+                </div>
+              </div>
+
+              {/* If NO Item Number */}
+              {!hasItemNumber && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1.5 uppercase">
+                      สถานะการขอเพิ่ม Item กับจัดซื้อ
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setItemRequestStatus('None')}
+                        className={`py-1.5 px-2.5 border rounded-lg text-xs font-semibold transition-all duration-200 ${
+                          itemRequestStatus === 'None'
+                            ? 'border-slate-500/50 bg-slate-800 text-slate-200'
+                            : 'border-slate-800 text-slate-400 bg-slate-950/50'
+                        }`}
+                      >
+                        ยังไม่ได้แจ้งเรื่อง
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setItemRequestStatus('Pending')}
+                        className={`py-1.5 px-2.5 border rounded-lg text-xs font-semibold transition-all duration-200 ${
+                          itemRequestStatus === 'Pending'
+                            ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+                            : 'border-slate-800 text-slate-400 bg-slate-950/50'
+                        }`}
+                      >
+                        แจ้งจัดซื้อแล้ว (รอแอด Item)
+                      </button>
+                    </div>
+                  </div>
+                  {itemRequestStatus === 'Pending' && (
+                    <div className="text-[10px] text-amber-400 bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 leading-relaxed">
+                      ⏳ กำลังอยู่ในขั้นตอนจัดซื้อแอดไอเทมเข้าระบบ AX (เมื่อแอดเสร็จแล้วจึงจะออก PR ได้)
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* If HAS Item Number */}
+              {hasItemNumber && (
+                <div className="grid grid-cols-2 gap-4 animate-fade-in">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">
+                      รหัส Item (AX Code)
+                    </label>
+                    <input
+                      type="text"
+                      value={itemNumber}
+                      onChange={(e) => setItemNumber(e.target.value)}
+                      placeholder="เช่น ITM-00123"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all text-xs text-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">
+                      เลขที่ PR (PR Number)
+                    </label>
+                    <input
+                      type="text"
+                      value={prNumber}
+                      onChange={(e) => setPrNumber(e.target.value)}
+                      placeholder="เช่น PR26-0045"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all text-xs text-slate-200"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* PR Status selection */}
+              {hasItemNumber && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 mb-1.5 uppercase">
+                    สถานะการออก PR
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPrStatus('Ready')}
+                      className={`py-1.5 px-2.5 border rounded-lg text-xs font-semibold transition-all duration-200 ${
+                        prStatus === 'Ready'
+                          ? 'border-violet-500/50 bg-violet-500/10 text-violet-400'
+                          : 'border-slate-800 text-slate-400 bg-slate-950/50'
+                      }`}
+                    >
+                      พร้อมออก PR (มีรหัส Item)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrStatus('Issued')}
+                      className={`py-1.5 px-2.5 border rounded-lg text-xs font-semibold transition-all duration-200 ${
+                        prStatus === 'Issued'
+                          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                          : 'border-slate-800 text-slate-400 bg-slate-950/50'
+                      }`}
+                    >
+                      ออก PR เรียบร้อยแล้ว
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
 
           {/* Reminder Date */}
           <div>

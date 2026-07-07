@@ -150,6 +150,21 @@ Format the output strictly as a JSON object:
 }
 
 /**
+ * Helper to match item by last 3 digits of its ID.
+ */
+function findItemByShortId(messageText: string, items: any[]): any | null {
+  if (items.length === 0) return null;
+  // Match #7fa or 7fa at word boundary or end of string
+  const match = messageText.match(/(?:#)?\b([a-f0-9]{3})\b/i) || messageText.match(/(?:#)?([a-f0-9]{3})$/i);
+  if (match) {
+    const shortId = match[1].toLowerCase();
+    const found = items.find(item => item.id.toLowerCase().endsWith(shortId));
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
  * Classifies the user's message intent and extracts necessary fields using Google Gemini AI.
  * Falls back to a robust regex parser if API keys are missing or calls fail.
  * 
@@ -160,9 +175,64 @@ export async function classifyAndParseMessageWithAI(
   messageText: string,
   existingItems: any[]
 ): Promise<GeminiParsedOutput> {
+  const text = messageText.toLowerCase().trim();
+  const matchedItem = findItemByShortId(messageText, existingItems);
+
+  // 1. Intercept with explicit keywords + short ID if matched (100% accurate, no API delay)
+  if (matchedItem) {
+    // Check for COMPLETE
+    if (/(สำเร็จ|เสร็จ|complete|finish|done|ออกรหัส|ออกไอเทม|ออก\s*pr\s*แล้ว)/i.test(text)) {
+      return {
+        intent: 'COMPLETE',
+        item_id: matchedItem.id
+      };
+    }
+    // Check for DELETE
+    if (/(ลบ|ยกเลิก|delete|remove)/i.test(text)) {
+      return {
+        intent: 'DELETE',
+        item_id: matchedItem.id
+      };
+    }
+    // Check for request item AX status update
+    if (/(แจ้งจัดซื้อ|ขอไอเทม|แอดไอเทม|ส่งจัดซื้อ)/i.test(text)) {
+      return {
+        intent: 'UPDATE',
+        item_id: matchedItem.id,
+        update_data: {
+          item_request_status: 'Pending',
+          status: 'Purchasing'
+        } as any
+      };
+    }
+    // Check for UPDATE (e.g. credit term)
+    if (/(แก้ไข|แก้|update|edit)/i.test(text)) {
+      const creditMatch = text.match(/(?:เครดิต|credit)\s*(30|60|90)/i);
+      const credit_term = creditMatch ? Number(creditMatch[1]) as 30 | 60 | 90 : null;
+      return {
+        intent: 'UPDATE',
+        item_id: matchedItem.id,
+        update_data: credit_term ? { credit_term } : {}
+      };
+    }
+    // If just the ID suffix is typed, e.g. "7fa" or "#7fa", or with search keywords
+    const isJustId = text === matchedItem.id.substring(matchedItem.id.length - 3).toLowerCase() || 
+                      text === '#' + matchedItem.id.substring(matchedItem.id.length - 3).toLowerCase();
+    const isSearch = text.includes('ค้นหา') || text.includes('หา') || text.includes('search') || text.includes('find') || text.includes('ดู');
+    
+    if (isJustId || isSearch) {
+      return {
+        intent: 'SEARCH',
+        search_query: matchedItem.title,
+        item_id: matchedItem.id
+      };
+    }
+  }
+
+  // 2. Fallback to API if keys are available
   const apiKey = getGeminiApiKey();
   if (apiKey) {
-    // 1. Try gemini-2.5-flash with thinkingBudget = 0 first (fastest, no reasoning latency)
+    // Try gemini-2.5-flash first
     try {
       const parsed = await callGeminiWithModel(
         'gemini-2.5-flash',
@@ -176,7 +246,7 @@ export async function classifyAndParseMessageWithAI(
       console.error('gemini-2.5-flash failed, trying fallback:', err);
     }
 
-    // 2. Fallback to gemini-3.5-flash with thinkingLevel = LOW (higher latency but newer model)
+    // Fallback to gemini-3.5-flash
     try {
       const parsed = await callGeminiWithModel(
         'gemini-3.5-flash',
@@ -202,26 +272,45 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
   const text = messageText.toLowerCase().trim();
 
   // 1. SEARCH intent
-  if (text.startsWith('ค้นหา') || text.startsWith('หา') || text.startsWith('search') || text.startsWith('find')) {
-    const query = messageText.replace(/^(ค้นหา|หา|search|find)\s*/i, '').trim();
-    return { intent: 'SEARCH', search_query: query };
+  if (text.startsWith('ค้นหา') || text.startsWith('หา') || text.startsWith('search') || text.startsWith('find') || text.startsWith('ดู')) {
+    const query = messageText.replace(/^(ค้นหา|หา|search|find|ดู)\s*/i, '').trim();
+    const matched = findClosestItem(query, existingItems);
+    return { 
+      intent: 'SEARCH', 
+      search_query: matched ? matched.title : query,
+      item_id: matched ? matched.id : undefined
+    };
   }
 
   // 2. DELETE intent
-  if (text.startsWith('ลบ') || text.startsWith('delete')) {
-    const query = messageText.replace(/^(ลบ|delete)\s*/i, '').trim();
+  if (text.startsWith('ลบ') || text.startsWith('delete') || text.startsWith('ยกเลิก')) {
+    const query = messageText.replace(/^(ลบ|delete|ยกเลิก)\s*/i, '').trim();
     const matched = findClosestItem(query, existingItems);
     return { intent: 'DELETE', item_id: matched?.id || undefined };
   }
 
   // 3. COMPLETE intent
-  if (text.startsWith('เสร็จแล้ว') || text.startsWith('สำเร็จ') || text.startsWith('complete') || text.includes('เสร็จ') || text.includes('สำเร็จ')) {
-    const query = messageText.replace(/^(เสร็จแล้ว|สำเร็จ|complete|เสร็จ)\s*/i, '').trim();
+  if (text.startsWith('เสร็จแล้ว') || text.startsWith('สำเร็จ') || text.startsWith('complete') || text.includes('เสร็จ') || text.includes('สำเร็จ') || text.includes('ออกรหัส') || text.includes('ออกไอเทม')) {
+    const query = messageText.replace(/^(เสร็จแล้ว|สำเร็จ|complete|เสร็จ|ออกรหัส|ออกไอเทม)\s*/i, '').trim();
     const matched = findClosestItem(query, existingItems);
     return { intent: 'COMPLETE', item_id: matched?.id || undefined };
   }
 
-  // 4. UPDATE intent
+  // 4. Request AX Item intent
+  if (text.startsWith('แจ้งจัดซื้อ') || text.startsWith('ขอไอเทม') || text.startsWith('แอดไอเทม') || text.startsWith('ส่งจัดซื้อ')) {
+    const query = messageText.replace(/^(แจ้งจัดซื้อ|ขอไอเทม|แอดไอเทม|ส่งจัดซื้อ)\s*/i, '').trim();
+    const matched = findClosestItem(query, existingItems);
+    return {
+      intent: 'UPDATE',
+      item_id: matched?.id || undefined,
+      update_data: {
+        item_request_status: 'Pending',
+        status: 'Purchasing'
+      } as any
+    };
+  }
+
+  // 5. UPDATE intent
   if (text.startsWith('แก้ไข') || text.startsWith('แก้') || text.startsWith('edit') || text.startsWith('update')) {
     const query = messageText.replace(/^(แก้ไข|แก้|edit|update)\s*/i, '').trim();
     const creditMatch = query.match(/(?:เครดิต|credit)\s*(30|60|90)/i);
@@ -237,7 +326,7 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
     };
   }
 
-  // 5. CREATE intent (default fallback)
+  // 6. CREATE intent (default fallback)
   let credit_term: 30 | 60 | 90 | null = null;
   let po_date: string | null = null;
   let budget_due_date: string | null = null;
@@ -266,7 +355,15 @@ function findClosestItem(query: string, items: any[]): any | null {
   if (items.length === 0 || !query) return null;
   const cleanQuery = query.toLowerCase().trim();
 
-  // Try direct substring match first
+  // Try matching by short ID first
+  const shortIdMatch = cleanQuery.match(/(?:#)?\b([a-f0-9]{3})\b/) || cleanQuery.match(/(?:#)?([a-f0-9]{3})$/);
+  if (shortIdMatch) {
+    const shortId = shortIdMatch[1];
+    const found = items.find(item => item.id.toLowerCase().endsWith(shortId));
+    if (found) return found;
+  }
+
+  // Try direct substring match
   for (const item of items) {
     if (item.title.toLowerCase().includes(cleanQuery) || cleanQuery.includes(item.title.toLowerCase())) {
       return item;

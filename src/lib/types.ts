@@ -24,6 +24,12 @@ export interface Item {
   budget_due_date: string | null; // YYYY-MM-DD
   created_at: string;
   updated_at: string;
+  is_pr: boolean;
+  has_item_number: boolean;
+  item_number: string | null;
+  item_request_status: 'None' | 'Pending' | 'Added';
+  pr_number: string | null;
+  pr_status: 'Pending' | 'Ready' | 'Issued';
 }
 
 export interface Database {
@@ -68,6 +74,12 @@ export interface Database {
           budget_due_date?: string | null;
           created_at?: string;
           updated_at?: string;
+          is_pr?: boolean;
+          has_item_number?: boolean;
+          item_number?: string | null;
+          item_request_status?: 'None' | 'Pending' | 'Added';
+          pr_number?: string | null;
+          pr_status?: 'Pending' | 'Ready' | 'Issued';
         };
         Update: {
           id?: string;
@@ -82,6 +94,12 @@ export interface Database {
           budget_due_date?: string | null;
           created_at?: string;
           updated_at?: string;
+          is_pr?: boolean;
+          has_item_number?: boolean;
+          item_number?: string | null;
+          item_request_status?: 'None' | 'Pending' | 'Added';
+          pr_number?: string | null;
+          pr_status?: 'Pending' | 'Ready' | 'Issued';
         };
         Relationships: [];
       };
