@@ -6,10 +6,10 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/components/providers/auth-provider';
 import { Item, ItemStatus, Profile } from '@/lib/types';
 import ItemModal from '@/components/dashboard/item-modal';
-import { 
-  Plus, Search, Edit2, Trash2, Calendar, 
-  ArrowRight, ArrowLeft, Image as ImageIcon, 
-  FileText, Clock, CreditCard, ChevronRight, AlertCircle 
+import {
+  Plus, Search, Edit2, Trash2, Calendar,
+  ArrowRight, ArrowLeft, Image as ImageIcon,
+  FileText, Clock, CreditCard, ChevronRight, AlertCircle
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -17,10 +17,10 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const supabase = createClient();
-  
+
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -67,7 +67,7 @@ export default function DashboardPage() {
         },
         (payload) => {
           queryClient.invalidateQueries({ queryKey: ['items'] });
-          
+
           if (payload.eventType === 'INSERT') {
             const newItem = payload.new as Item;
             showToast(`➕ บันทึกรายการใหม่: "${newItem.title}" จาก LINE Bot!`, 'info');
@@ -75,9 +75,9 @@ export default function DashboardPage() {
             const updatedItem = payload.new as Item;
             const oldItem = payload.old as Item;
             if (oldItem && oldItem.status !== updatedItem.status) {
-              const statusName = 
+              const statusName =
                 updatedItem.status === 'Pending' ? 'กำลังดำเนินการ' :
-                updatedItem.status === 'Purchasing' ? 'ติดต่อจัดซื้อ' : 'กำลังออก ITEM';
+                  updatedItem.status === 'Purchasing' ? 'ติดต่อจัดซื้อ' : 'กำลังออก ITEM';
               showToast(`🔄 อัปเดตรายการ: "${updatedItem.title}" เป็น "${statusName}"`, 'info');
             }
           }
@@ -129,7 +129,7 @@ export default function DashboardPage() {
         .select('*')
         .eq('id', user?.id)
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -187,7 +187,7 @@ export default function DashboardPage() {
   // Move Status Mutation
   const moveStatusMutation = useMutation({
     mutationFn: async ({ itemId, nextStatus }: { itemId: string; nextStatus: ItemStatus }) => {
-      const updates: Partial<Item> = { 
+      const updates: Partial<Item> = {
         status: nextStatus,
         updated_at: new Date().toISOString()
       };
@@ -207,7 +207,7 @@ export default function DashboardPage() {
           const finalCreditTerm = currentItem.credit_term || 30;
           // Calculate budget due date
           const calculatedDueDate = calculateDueDate(finalPoDate, finalCreditTerm);
-          
+
           updates.po_date = finalPoDate;
           updates.credit_term = finalCreditTerm;
           updates.budget_due_date = calculatedDueDate;
@@ -221,11 +221,11 @@ export default function DashboardPage() {
 
       if (error) throw error;
 
-      return { 
-        title: currentItem?.title || '', 
-        nextStatus, 
-        calculatedDueDate: updates.budget_due_date, 
-        creditTerm: updates.credit_term 
+      return {
+        title: currentItem?.title || '',
+        nextStatus,
+        calculatedDueDate: updates.budget_due_date,
+        creditTerm: updates.credit_term
       };
     },
     onSuccess: (data) => {
@@ -234,9 +234,9 @@ export default function DashboardPage() {
         const dateStr = new Date(data.calculatedDueDate).toLocaleDateString('th-TH', { dateStyle: 'medium' });
         showToast(`อัปเดตเครดิต ${data.creditTerm} วันสำเร็จ! ครบกำหนดชำระจริงวันที่: ${dateStr}`);
       } else {
-        const statusName = 
+        const statusName =
           data?.nextStatus === 'Pending' ? 'กำลังดำเนินการ' :
-          data?.nextStatus === 'Purchasing' ? 'ติดต่อจัดซื้อ' : 'กำลังออก ITEM';
+            data?.nextStatus === 'Purchasing' ? 'ติดต่อจัดซื้อ' : 'กำลังออก ITEM';
         showToast(`ย้ายสถานะเป็น "${statusName}" เรียบร้อยแล้ว`);
       }
     },
@@ -301,10 +301,10 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:via-slate-100 dark:to-slate-400 bg-clip-text text-transparent">
-            บอร์ดติดตามงานจัดซื้อ (Procurement Board)
+            บันทึกช่วยจำ
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            จัดการคำสั่งซื้อและเครดิตเทอมทางการเงินเชื่อมโยง LINE Bot
+            ระบบบันทึกช่วยจำ สำหรับการเปิด PR / PO / เพิ่ม Item
           </p>
         </div>
         <button
@@ -312,7 +312,7 @@ export default function DashboardPage() {
           className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-sm shadow-lg shadow-indigo-600/10 active:scale-[0.98] transition-all cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>เพิ่มรายการจัดซื้อ</span>
+          <span>จดบันทึก</span>
         </button>
       </div>
 
@@ -351,7 +351,7 @@ export default function DashboardPage() {
                       <span className="text-sm font-extrabold text-violet-600 dark:text-violet-400 select-all tracking-widest">{profile.link_code}</span>
                     </div>
                     <div className="text-[10px] text-slate-500 border-l border-slate-200 dark:border-slate-800 pl-3">
-                      พิมพ์ส่งบอท:<br/>
+                      พิมพ์ส่งบอท:<br />
                       <code className="text-violet-600 dark:text-violet-400 font-bold select-all">#link {profile.link_code}</code>
                     </div>
                   </div>
@@ -400,19 +400,18 @@ export default function DashboardPage() {
           {columns.map((column) => {
             const columnItems = filteredItems.filter((item) => item.status === column.status);
             const isColumnHovered = activeDragColumn === column.status;
-            
+
             return (
-              <div 
-                key={column.status} 
+              <div
+                key={column.status}
                 onDragOver={handleDragOver}
                 onDragEnter={(e) => handleDragEnter(e, column.status)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, column.status)}
-                className={`flex flex-col rounded-2xl min-h-[60vh] p-4 transition-all duration-200 ${
-                  isColumnHovered
-                    ? 'bg-violet-500/5 dark:bg-violet-500/10 border-2 border-dashed border-violet-500/40'
-                    : 'bg-slate-100/40 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-800/50'
-                }`}
+                className={`flex flex-col rounded-2xl min-h-[60vh] p-4 transition-all duration-200 ${isColumnHovered
+                  ? 'bg-violet-500/5 dark:bg-violet-500/10 border-2 border-dashed border-violet-500/40'
+                  : 'bg-slate-100/40 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-800/50'
+                  }`}
               >
                 {/* Column Title */}
                 <div className="mb-4 pb-3 border-b border-slate-200 dark:border-slate-800/50 flex items-center justify-between">
@@ -435,8 +434,8 @@ export default function DashboardPage() {
                     </div>
                   ) : (
                     columnItems.map((item) => (
-                      <div 
-                        key={item.id} 
+                      <div
+                        key={item.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, item.id)}
                         className={`group relative backdrop-blur-sm bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-800/80 rounded-xl p-4 shadow-sm hover:shadow-md dark:shadow-none hover:border-slate-400 dark:hover:border-slate-700/80 transition-all duration-200 flex flex-col justify-between gap-3 cursor-grab active:cursor-grabbing`}
@@ -458,9 +457,9 @@ export default function DashboardPage() {
                               <FileText className="w-6 h-6 text-violet-500 shrink-0" />
                               <div className="min-w-0">
                                 <p className="text-[9px] text-slate-500 uppercase font-extrabold leading-none">เอกสารแนบ</p>
-                                <a 
-                                  href={item.image_url} 
-                                  target="_blank" 
+                                <a
+                                  href={item.image_url}
+                                  target="_blank"
                                   rel="noopener noreferrer"
                                   onClick={(e) => e.stopPropagation()}
                                   className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:underline truncate block mt-1"

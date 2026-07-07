@@ -19,10 +19,10 @@ function calculateDueDate(poDateStr: string | null, creditTerm: number | null): 
   if (!poDateStr || !creditTerm) return null;
   const date = new Date(poDateStr);
   if (isNaN(date.getTime())) return null;
-  
+
   // Add credit term days
   date.setDate(date.getDate() + creditTerm);
-  
+
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
@@ -40,13 +40,13 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
   const [poDate, setPoDate] = useState('');
   const [creditTerm, setCreditTerm] = useState<30 | 60 | 90 | null>(null);
   const [budgetDueDate, setBudgetDueDate] = useState<string | null>(null);
-  
+
   // Image Upload States
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  
+
   // UI Status States
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -107,7 +107,7 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
     if (file) {
       setImageFile(file);
       setFileName(file.name);
-      
+
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -131,9 +131,9 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
     mutationFn: async () => {
       setSubmitting(true);
       setError(null);
-      
+
       let imageUrl = existingImageUrl;
-      
+
       // Upload new image if present
       if (imageFile) {
         imageUrl = await uploadItemImage(imageFile, userId);
@@ -158,14 +158,14 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
           .from('items')
           .update(itemData)
           .eq('id', itemToEdit.id);
-        
+
         if (updateError) throw updateError;
       } else {
         // Create Item
         const { error: createError } = await supabase
           .from('items')
           .insert([itemData]);
-        
+
         if (createError) throw createError;
       }
     },
@@ -197,8 +197,8 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Glass backdrop overlay */}
-      <div 
-        className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" 
+      <div
+        className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
@@ -207,9 +207,9 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
         {/* Header */}
         <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
           <h2 className="text-xl font-bold bg-gradient-to-r from-violet-400 to-indigo-200 bg-clip-text text-transparent">
-            {itemToEdit ? 'แก้ไขรายการจัดซื้อ' : 'เพิ่มรายการจัดซื้อใหม่'}
+            {itemToEdit ? 'แก้ไขรายการ' : 'เพิ่มรายการใหม่'}
           </h2>
-          <button 
+          <button
             onClick={onClose}
             className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
           >
@@ -311,7 +311,7 @@ export default function ItemModal({ isOpen, onClose, userId, itemToEdit }: ItemM
               <h3 className="text-xs font-bold text-violet-400 uppercase tracking-wider mb-2">
                 ข้อมูลเครดิตและการชำระเงิน (PO & Credit Term)
               </h3>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 {/* PO Date */}
                 <div>
