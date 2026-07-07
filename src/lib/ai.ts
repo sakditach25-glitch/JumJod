@@ -50,7 +50,7 @@ function getGeminiApiKey(): string | undefined {
     process.env.GEMINI_API_KEY_4,
     process.env.GEMINI_API_KEY
   ].filter(Boolean) as string[];
-  
+
   if (keys.length === 0) return undefined;
   // Rotate key randomly to load balance and manage rate limits
   const randomIndex = Math.floor(Math.random() * keys.length);
@@ -71,7 +71,7 @@ export async function classifyAndParseMessageWithAI(
   const apiKey = getGeminiApiKey();
   if (apiKey) {
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -126,7 +126,7 @@ Return ONLY raw JSON. Do NOT wrap in markdown code blocks like \`\`\`json.`
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         const cleanJson = rawText.replace(/```json/i, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(cleanJson) as GeminiParsedOutput;
-        
+
         // Ensure budget due date is calculated if credit term is set
         if (parsed.intent === 'CREATE' && parsed.create_data) {
           if (parsed.create_data.credit_term && !parsed.create_data.budget_due_date) {
@@ -134,7 +134,7 @@ Return ONLY raw JSON. Do NOT wrap in markdown code blocks like \`\`\`json.`
             parsed.create_data.budget_due_date = calculateDueDate(parsed.create_data.po_date, parsed.create_data.credit_term);
           }
         }
-        
+
         return parsed;
       } else {
         console.error('Gemini API error status:', response.status);
@@ -179,12 +179,12 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
     const query = messageText.replace(/^(แก้ไข|แก้|edit|update)\s*/i, '').trim();
     const creditMatch = query.match(/(?:เครดิต|credit)\s*(30|60|90)/i);
     const credit_term = creditMatch ? Number(creditMatch[1]) as 30 | 60 | 90 : null;
-    
+
     let targetQuery = query.replace(/(?:เครดิต|credit)\s*(30|60|90)/i, '').trim();
     const matched = findClosestItem(targetQuery, existingItems);
 
-    return { 
-      intent: 'UPDATE', 
+    return {
+      intent: 'UPDATE',
       item_id: matched?.id || undefined,
       update_data: credit_term ? { credit_term } : {}
     };
@@ -218,7 +218,7 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
 function findClosestItem(query: string, items: any[]): any | null {
   if (items.length === 0 || !query) return null;
   const cleanQuery = query.toLowerCase().trim();
-  
+
   // Try direct substring match first
   for (const item of items) {
     if (item.title.toLowerCase().includes(cleanQuery) || cleanQuery.includes(item.title.toLowerCase())) {
