@@ -178,6 +178,38 @@ export async function classifyAndParseMessageWithAI(
   const text = messageText.toLowerCase().trim();
   const matchedItem = findItemByShortId(messageText, existingItems);
 
+  // 1. Intercept greetings and help prompts for instant, friendly replies (no API delay, like Pa Nuan)
+  const isGreeting = /^(สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|ดีจ้า|hello|hi|hey|hola|greetings)/i.test(text);
+  const isHelpPrompt = /^(ช่วยจดบันทึก|ช่วยจด|จดบันทึก|จดหน่อย|ช่วยหน่อย|ทำอะไรได้บ้าง|คู่มือ|ใช้งานยังไง)/i.test(text);
+
+  if (isGreeting) {
+    return {
+      intent: 'UNKNOWN',
+      message: 'สวัสดีครับ ยินดีต้อนรับสู่จำจด! มีอะไรให้ผมช่วยบันทึกหรือช่วยจำวันนี้ไหมครับ 😊'
+    };
+  }
+
+  if (isHelpPrompt) {
+    return {
+      intent: 'UNKNOWN',
+      message: 'ยินดีครับ! คุณสามารถพิมพ์สั่งบันทึกการจัดซื้อหรือแจ้งเตือนได้เลยจ้า\n\nตัวอย่างเช่น:\n📝 "ซื้อหมึกพิมพ์ 5 กล่อง เครดิต 30 วัน"\n📝 "สั่งคอมพิวเตอร์กราฟิก เครดิต 60 วัน"'
+    };
+  }
+
+  // 2. Intercept clear command patterns for instant local parsing (no API delay, like Pa Nuan)
+  const isSearchPattern = /^(ค้นหา|หา|search|find|ดู)\s/i.test(text);
+  const isDeletePattern = /^(ลบ|delete|ยกเลิก)\s/i.test(text);
+  const isCompletePattern = /^(เสร็จแล้ว|สำเร็จ|complete|เสร็จ|ออกรหัส|ออกไอเทม)\s/i.test(text);
+  const isUpdatePattern = /^(แก้ไข|แก้|edit|update)\s/i.test(text);
+  const hasCreditTerm = /(?:เครดิต|credit|cr)\s*(30|60|90)/i.test(text);
+  const hasReminder = /(?:แจ้งเตือน|เตือน|นัดหมาย|นัด)\s/i.test(text) || /\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/i.test(text);
+  const isClearCreate = /^(ซื้อ|สั่งซื้อ|สั่ง|จด|บันทึก|เพิ่ม)\b/i.test(text) || hasCreditTerm || hasReminder;
+
+  if (isSearchPattern || isDeletePattern || isCompletePattern || isUpdatePattern || isClearCreate) {
+    console.log(`[FAST INTERCEPT] Pattern matched. Running local regex parser for: "${messageText}"`);
+    return regexFallbackParser(messageText, existingItems);
+  }
+
   // 1. Intercept with explicit keywords + short ID if matched (100% accurate, no API delay)
   if (matchedItem) {
     // Check for COMPLETE
@@ -265,6 +297,27 @@ export async function classifyAndParseMessageWithAI(
   return regexFallbackParser(messageText, existingItems);
 }
 
+function extractReminderDate(text: string): string | null {
+  const dateMatch = text.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
+  if (dateMatch) {
+    const day = parseInt(dateMatch[1]);
+    const month = parseInt(dateMatch[2]) - 1; // 0-indexed
+    let year = parseInt(dateMatch[3]);
+    
+    if (year < 100) {
+      year += 2000;
+    } else if (year > 2500) {
+      year -= 543;
+    }
+    
+    const date = new Date(year, month, day, 9, 0, 0);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+  return null;
+}
+
 /**
  * Regex-based fallback parser in case Gemini API is offline or not configured.
  */
@@ -338,15 +391,22 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
     budget_due_date = calculateDueDate(po_date, credit_term);
   }
 
+  const reminder_date = extractReminderDate(messageText);
+
+  let title = messageText.replace(/(?:เครดิต|credit|cr)\s*(30|60|90)\s*(?:วัน|days)?/i, '').trim();
+  title = title.replace(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g, '').trim();
+  title = title.replace(/(?:แจ้งเตือน|เตือน|วันจันทร์ที่|วันอังคารที่|วันพุธที่|วันพฤหัสบดีที่|วันศุกร์ที่|วันเสาร์ที่|วันอาทิตย์ที่|วันที่|วัน)\s*$/i, '').trim();
+  title = title.replace(/^(เพิ่ม)\s*/i, '').trim();
+
   return {
     intent: 'CREATE',
     create_data: {
-      title: messageText.replace(/(?:เครดิต|credit|cr)\s*(30|60|90)\s*(?:วัน|days)?/i, '').trim() || messageText,
+      title: title || messageText,
       description: `บันทึกผ่าน LINE Bot: ${messageText}`,
       credit_term,
       po_date,
       budget_due_date,
-      reminder_date: null
+      reminder_date
     }
   };
 }

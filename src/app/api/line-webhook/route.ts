@@ -220,7 +220,7 @@ function createItemFlexBubble(item: any, appUrl: string) {
       color: '#10b981',
       action: {
         type: 'postback',
-        label: '✅ สำเร็จ (ออก ITEM)',
+        label: '✅ สำเร็จ',
         data: `action=complete&itemId=${item.id}`
       }
     });
@@ -240,15 +240,15 @@ function createItemFlexBubble(item: any, appUrl: string) {
     });
   }
 
-  // 3. Link to web editor
+  // 3. Edit button in LINE
   actions.push({
     type: 'button',
-    style: 'link',
+    style: 'secondary',
     height: 'sm',
     action: {
-      type: 'uri',
-      label: '🌐 เปิดแก้ในหน้าเว็บ',
-      uri: editUrl
+      type: 'postback',
+      label: '✍️ แก้ไขรายการ',
+      data: `action=request_edit&itemId=${item.id}`
     }
   });
 
@@ -273,9 +273,9 @@ async function sendLineReply(replyToken: string, content: string | any) {
     return;
   }
 
-  const message = typeof content === 'string'
-    ? { type: 'text', text: content }
-    : content;
+  const messages = Array.isArray(content)
+    ? content.map(c => typeof c === 'string' ? { type: 'text', text: c } : c)
+    : [typeof content === 'string' ? { type: 'text', text: content } : content];
 
   try {
     const response = await fetch('https://api.line.me/v2/bot/message/reply', {
@@ -286,7 +286,7 @@ async function sendLineReply(replyToken: string, content: string | any) {
       },
       body: JSON.stringify({
         replyToken,
-        messages: [message],
+        messages,
       }),
     });
 
@@ -476,6 +476,72 @@ export async function POST(request: Request) {
             } else {
               await sendLineReply(replyToken, `🗑️ ลบรายการ "${item.title}" เรียบร้อยแล้วครับ!`);
             }
+          } else if (action === 'request_edit') {
+            const { data: item, error: fetchError } = await supabaseAdmin
+              .from('items')
+              .select('title')
+              .eq('id', itemId)
+              .single();
+
+            if (fetchError || !item) {
+              await sendLineReply(replyToken, '❌ ไม่พบรายการจัดซื้อนี้ หรืออาจถูกลบไปแล้ว');
+              continue;
+            }
+
+            memoryStateCache.set(lineUserId, { action: 'editing', itemId: itemId, itemTitle: item.title });
+
+            await sendLineReply(
+              replyToken,
+              `✍️ เตรียมแก้ไขรายการ: "${item.title}"\n\nกรุณาพิมพ์รายละเอียดใหม่ที่คุณต้องการแก้ไขเข้ามาได้เลยครับ เช่น:\n- "เครดิต 60 วัน"\n- "แก้ชื่อเป็น คอมพิวเตอร์ i7"\n- "แก้คำอธิบายเป็น ซื้อมาใช้ในออฟฟิศ"\n(บอทจะอัปเดตข้อมูลรายการนี้โดยตรง)`
+            );
+          } else if (action === 'view_items') {
+            const statusParam = params.get('status');
+            
+            const { data: userProfile, error: profileErr } = await supabaseAdmin
+              .from('profiles')
+              .select('id')
+              .eq('line_user_id', lineUserId)
+              .single();
+
+            if (profileErr || !userProfile) {
+              await sendLineReply(replyToken, '❌ ไม่พบบัญชีผู้ใช้งานที่เชื่อมต่อกับไลน์นี้');
+              continue;
+            }
+
+            let query = supabaseAdmin
+              .from('items')
+              .select('*')
+              .eq('user_id', userProfile.id);
+
+            if (statusParam === 'completed') {
+              query = query.eq('status', 'Issuing Item');
+            } else {
+              query = query.neq('status', 'Issuing Item');
+            }
+
+            const { data: itemsList, error: listErr } = await query
+              .order('updated_at', { ascending: false })
+              .limit(10);
+
+            if (listErr || !itemsList || itemsList.length === 0) {
+              const statusName = statusParam === 'completed' ? 'ที่สำเร็จแล้ว' : 'ที่ยังไม่สำเร็จ (ค้างทำ)';
+              await sendLineReply(replyToken, `📋 ไม่พบรายการ${statusName}ในขณะนี้`);
+              continue;
+            }
+
+            const requestUrl = new URL(request.url);
+            const appUrl = requestUrl.origin;
+            
+            const bubbles = itemsList.map(item => createItemFlexBubble(item, appUrl));
+            const flexMessage = {
+              type: 'flex',
+              altText: `📋 รายการจัดซื้อ`,
+              contents: {
+                type: 'carousel',
+                contents: bubbles.slice(0, 10) // Carousel limit is 10 bubbles
+              }
+            };
+            await sendLineReply(replyToken, flexMessage);
           }
         } catch (error) {
           console.error('Error handling postback:', error);
@@ -557,7 +623,138 @@ export async function POST(request: Request) {
         .limit(30);
       const existingItems = itemsData || [];
 
-      // 3. (Stateful Check Removed - We now save immediately and use stateless postbacks)
+      // 3. Stateful edit mode check & "รายการ" command interception
+      if (messageText.trim() === 'รายการ' || messageText.trim() === 'ดูรายการ') {
+        const listMenuFlex = {
+          type: 'flex',
+          altText: '📋 เมนูเลือกดูรายการ',
+          contents: {
+            type: 'bubble',
+            size: 'mega',
+            header: {
+              type: 'box',
+              layout: 'vertical',
+              backgroundColor: '#8b5cf6',
+              contents: [
+                {
+                  type: 'text',
+                  text: '📋 เมนูเลือกดูรายการ',
+                  weight: 'bold',
+                  color: '#ffffff',
+                  size: 'sm'
+                }
+              ]
+            },
+            body: {
+              type: 'box',
+              layout: 'vertical',
+              spacing: 'md',
+              contents: [
+                {
+                  type: 'text',
+                  text: 'กรุณาเลือกรายการที่คุณต้องการตรวจสอบ:',
+                  size: 'xs',
+                  color: '#64748b',
+                  wrap: true
+                },
+                {
+                  type: 'button',
+                  style: 'primary',
+                  color: '#8b5cf6',
+                  height: 'sm',
+                  action: {
+                    type: 'postback',
+                    label: '⏳ รายการที่ยังไม่สำเร็จ (ค้างทำ)',
+                    data: 'action=view_items&status=active'
+                  }
+                },
+                {
+                  type: 'button',
+                  style: 'secondary',
+                  height: 'sm',
+                  action: {
+                    type: 'postback',
+                    label: '✅ รายการที่สำเร็จแล้ว',
+                    data: 'action=view_items&status=completed'
+                  }
+                }
+              ]
+            }
+          }
+        };
+
+        await sendLineReply(replyToken, listMenuFlex);
+        continue;
+      }
+
+      const userState = memoryStateCache.get(lineUserId);
+      if (userState && userState.action === 'editing') {
+        let updateTitle = messageText;
+        let credit_term: any = null;
+
+        const creditMatch = messageText.match(/(?:เครดิต|credit|cr)\s*(30|60|90)\s*(?:วัน|days)?/i);
+        if (creditMatch) {
+          credit_term = Number(creditMatch[1]);
+          updateTitle = messageText.replace(/(?:เครดิต|credit|cr)\s*(30|60|90)\s*(?:วัน|days)?/i, '').trim();
+        }
+
+        updateTitle = updateTitle.replace(/^(แก้ไข|แก้|เปลี่ยน|edit|update|ชื่อ|เป็น)\s*/i, '').trim();
+
+        const updates: any = { updated_at: new Date().toISOString() };
+        if (updateTitle) {
+          updates.title = updateTitle;
+        }
+        if (credit_term) {
+          const poDate = new Date().toISOString().substring(0, 10);
+          updates.po_date = poDate;
+          updates.credit_term = credit_term;
+          updates.budget_due_date = calculateDueDate(poDate, credit_term);
+        }
+
+        const dateMatch = messageText.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
+        if (dateMatch) {
+          const day = parseInt(dateMatch[1]);
+          const month = parseInt(dateMatch[2]) - 1;
+          let year = parseInt(dateMatch[3]);
+          if (year < 100) year += 2000;
+          else if (year > 2500) year -= 543;
+          
+          const remDate = new Date(year, month, day, 9, 0, 0);
+          if (!isNaN(remDate.getTime())) {
+            updates.reminder_date = remDate.toISOString();
+            if (updates.title) {
+              updates.title = updates.title.replace(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g, '').trim();
+              updates.title = updates.title.replace(/(?:แจ้งเตือน|เตือน|วันจันทร์ที่|วันอังคารที่|วันพุธที่|วันพฤหัสบดีที่|วันศุกร์ที่|วันเสาร์ที่|วันอาทิตย์ที่|วันที่|วัน)\s*$/i, '').trim();
+            }
+          }
+        }
+
+        const { data: updatedItem, error: updateError } = await supabaseAdmin
+          .from('items')
+          .update(updates)
+          .eq('id', userState.itemId)
+          .select('*')
+          .single();
+
+        memoryStateCache.delete(lineUserId);
+
+        if (updateError || !updatedItem) {
+          await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการแก้ไขข้อมูลรายการ');
+        } else {
+          const requestUrl = new URL(request.url);
+          const appUrl = requestUrl.origin;
+          const bubble = createItemFlexBubble(updatedItem, appUrl);
+          await sendLineReply(replyToken, [
+            `✅ แก้ไขข้อมูลรายการ "${userState.itemTitle}" เรียบร้อยแล้วครับ!`,
+            {
+              type: 'flex',
+              altText: `📄 รายการที่แก้ไขแล้ว`,
+              contents: bubble
+            }
+          ]);
+        }
+        continue;
+      }
 
       // 4. Initial Request intent classification using AI
       console.log(`[LINE BOT] Classifying user query: "${messageText}"`);
