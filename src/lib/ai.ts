@@ -178,6 +178,15 @@ export async function classifyAndParseMessageWithAI(
   const text = messageText.toLowerCase().trim();
   const matchedItem = findItemByShortId(messageText, existingItems);
 
+  // 1.1. Intercept generic/empty commands to ask for details (prevent creating empty/generic cards, like Pa Nuan)
+  const isGenericWord = /^(เพิ่มข้อมูล|เพิ่ม|จด|บันทึก|จดบันทึก|สั่ง|ซื้อ)$/i.test(text);
+  if (isGenericWord) {
+    return {
+      intent: 'UNKNOWN',
+      message: 'ต้องการเพิ่มข้อมูลอะไรดีครับ? พิมพ์บอกจำจดได้เลยจ้า เช่น "ซื้อหมึกพิมพ์ 5 กล่อง เครดิต 30 วัน" หรือ "สั่งกระดาษ A4" ครับ 😊'
+    };
+  }
+
   // 1. Intercept greetings and help prompts for instant, friendly replies (no API delay, like Pa Nuan)
   const isGreeting = /^(สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|ดีจ้า|hello|hi|hey|hola|greetings)/i.test(text);
   const isHelpPrompt = /^(ช่วยจดบันทึก|ช่วยจด|จดบันทึก|จดหน่อย|ช่วยหน่อย|ทำอะไรได้บ้าง|คู่มือ|ใช้งานยังไง)/i.test(text);

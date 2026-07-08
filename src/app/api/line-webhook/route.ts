@@ -373,9 +373,8 @@ export async function POST(request: Request) {
           const action = params.get('action');
           const itemId = params.get('itemId');
 
-          if (!itemId) continue;
-
           if (action === 'complete') {
+            if (!itemId) continue;
             const { data: item, error: fetchError } = await supabaseAdmin
               .from('items')
               .select('title, po_date, credit_term')
@@ -412,6 +411,7 @@ export async function POST(request: Request) {
               );
             }
           } else if (action === 'set_requested') {
+            if (!itemId) continue;
             const { data: item, error: fetchError } = await supabaseAdmin
               .from('items')
               .select('title')
@@ -441,6 +441,7 @@ export async function POST(request: Request) {
               );
             }
           } else if (action === 'delete') {
+            if (!itemId) continue;
             const { data: item, error: fetchError } = await supabaseAdmin
               .from('items')
               .select('title')
@@ -463,6 +464,7 @@ export async function POST(request: Request) {
               await sendLineReply(replyToken, `🗑️ ลบรายการ "${item.title}" เรียบร้อยแล้วครับ!`);
             }
           } else if (action === 'request_edit') {
+            if (!itemId) continue;
             const { data: item, error: fetchError } = await supabaseAdmin
               .from('items')
               .select('title')
@@ -510,7 +512,7 @@ export async function POST(request: Request) {
               .limit(10);
 
             if (listErr || !itemsList || itemsList.length === 0) {
-              const statusName = statusParam === 'completed' ? 'ที่สำเร็จแล้ว' : 'ที่ยังไม่สำเร็จ (ค้างทำ)';
+              const statusName = statusParam === 'completed' ? 'ที่สำเร็จแล้ว' : 'ที่ยังไม่สำเร็จ';
               await sendLineReply(replyToken, `📋 ไม่พบรายการ${statusName}ในขณะนี้`);
               continue;
             }
@@ -650,7 +652,7 @@ export async function POST(request: Request) {
                   height: 'sm',
                   action: {
                     type: 'postback',
-                    label: '⏳ รายการที่ยังไม่สำเร็จ (ค้างทำ)',
+                    label: '⏳ รายการที่ยังไม่สำเร็จ',
                     data: 'action=view_items&status=active'
                   }
                 },
