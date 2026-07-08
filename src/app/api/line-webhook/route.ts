@@ -226,20 +226,6 @@ function createItemFlexBubble(item: any, appUrl: string) {
     });
   }
 
-  // 2. "แจ้งส่งจัดซื้อแล้ว" button - if it's PR and item status is None (not requested yet)
-  if (item.is_pr && !item.has_item_number && item.item_request_status === 'None') {
-    actions.push({
-      type: 'button',
-      style: 'secondary',
-      height: 'sm',
-      action: {
-        type: 'postback',
-        label: '⏳ แจ้งจัดซื้อแอดไอเทม',
-        data: `action=set_requested&itemId=${item.id}`
-      }
-    });
-  }
-
   // 3. Edit button in LINE
   actions.push({
     type: 'button',
