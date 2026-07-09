@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useTheme } from '@/components/providers/theme-provider';
-import { ClipboardList, Calendar, LogOut, User as UserIcon, Menu, Sun, Moon, CheckSquare } from 'lucide-react';
+import { ClipboardList, Calendar, LogOut, User as UserIcon, Menu, Sun, Moon, CheckSquare, Package } from 'lucide-react';
 import Image from 'next/image';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -27,6 +27,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       name: 'บอร์ดรายการ',
       href: '/dashboard',
       icon: ClipboardList,
+    },
+    {
+      name: 'สต็อกสินค้า',
+      href: '/stock',
+      icon: Package,
     },
     {
       name: 'ปฏิทิน',

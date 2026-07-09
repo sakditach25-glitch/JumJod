@@ -19,3 +19,45 @@ ALTER TABLE public.items ADD CONSTRAINT pr_status_check CHECK (pr_status IN ('Pe
 -- เพิ่มฟิลด์ตรวจสอบว่าส่งการแจ้งเตือนในไลน์บอทไปแล้วหรือยัง เพื่อป้องกันการแจ้งเตือนซ้ำ
 ALTER TABLE public.items ADD COLUMN IF NOT EXISTS reminder_sent boolean DEFAULT false NOT NULL;
 
+
+-- =========================================================================
+-- CREATE STOCKS TABLE FOR INVENTORY MANAGEMENT
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.stocks (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+  name text NOT NULL,
+  description text,
+  quantity integer DEFAULT 0 NOT NULL,
+  unit text DEFAULT 'ชิ้น' NOT NULL,
+  category text DEFAULT 'อุปกรณ์สำนักงาน' NOT NULL,
+  created_at timestamptz DEFAULT now() NOT NULL,
+  updated_at timestamptz DEFAULT now() NOT NULL
+);
+
+-- Enable RLS for stocks table
+ALTER TABLE public.stocks ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for stocks table
+DROP POLICY IF EXISTS "Users can view their own stocks" ON public.stocks;
+CREATE POLICY "Users can view their own stocks" 
+  ON public.stocks FOR SELECT 
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert their own stocks" ON public.stocks;
+CREATE POLICY "Users can insert their own stocks" 
+  ON public.stocks FOR INSERT 
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update their own stocks" ON public.stocks;
+CREATE POLICY "Users can update their own stocks" 
+  ON public.stocks FOR UPDATE 
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete their own stocks" ON public.stocks;
+CREATE POLICY "Users can delete their own stocks" 
+  ON public.stocks FOR DELETE 
+  USING (auth.uid() = user_id);
+
+

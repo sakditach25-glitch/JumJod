@@ -10,7 +10,7 @@ export interface ParsedProcurementData {
 }
 
 export interface GeminiParsedOutput {
-  intent: 'CREATE' | 'SEARCH' | 'UPDATE' | 'DELETE' | 'COMPLETE' | 'UNKNOWN';
+  intent: 'CREATE' | 'SEARCH' | 'UPDATE' | 'DELETE' | 'COMPLETE' | 'UNKNOWN' | 'STOCK';
   search_query?: string;
   item_id?: string;
   create_data?: ParsedProcurementData;
@@ -21,6 +21,13 @@ export interface GeminiParsedOutput {
     po_date?: string | null;
     budget_due_date?: string | null;
     status?: 'Pending' | 'Purchasing' | 'Issuing Item';
+  };
+  stock_data?: {
+    action: 'ADD' | 'SUBTRACT' | 'SET' | 'DELETE' | 'CHECK';
+    name: string | null;
+    quantity: number | null;
+    unit: string | null;
+    category?: string | null;
   };
   message?: string;
 }
@@ -64,21 +71,22 @@ async function classifyIntentWithAI(
   messageText: string,
   existingItems: any[],
   apiKey: string
-): Promise<'CREATE' | 'SEARCH' | 'UPDATE' | 'DELETE' | 'COMPLETE' | 'UNKNOWN'> {
+): Promise<'CREATE' | 'SEARCH' | 'UPDATE' | 'DELETE' | 'COMPLETE' | 'UNKNOWN' | 'STOCK'> {
   const modelName = 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
   const body = {
     contents: [{
       parts: [{
-        text: `You are an intent classifier for JodJum (จำจด) - a procurement planner system.
+        text: `You are an intent classifier for JodJum (จำจด) - a procurement and inventory planner system.
 Analyze this message from the user: "${messageText}"
 
-Existing items context (recent active items):
+Existing items context (recent active procurement items):
 ${JSON.stringify(existingItems.map(item => ({ id: item.id, title: item.title })))}
 
 Classify the user's intent into one of the following:
-- CREATE: User wants to add/remember a new procurement item, task, reminder, or general note (e.g. "บันทึก เคลียร์ไฟล์งบประมาณ", "สั่งซื้อคอม", "แจ้งเตือนสเก็ตงานพรุ่งนี้").
+- STOCK: User wants to manage stock, inventory, laboratory, or office supplies (e.g. "เบิกแอลกอฮอล์ 2 ขวด", "เพิ่มกระดาษ 10 รีม", "เช็กสต็อกกระดาษ A4", "แอดแอลกอฮอล์ 95%", "สต็อก", "ตัดสต็อก", "ลบสินค้าแอลกอฮอล์ออกจากคลัง", "แอลกอฮอล์").
+- CREATE: User wants to add/remember a new procurement item, task, or purchase reminder (e.g. "บันทึก เคลียร์ไฟล์งบประมาณ", "สั่งซื้อคอม", "แจ้งเตือนสเก็ตงานพรุ่งนี้").
 - SEARCH: User wants to search or look up items (e.g. "ค้นหาระเบียบ", "หา กระดาษ").
 - UPDATE: User wants to edit/change/update details of an existing item (e.g. "แก้ไข ซื้อหมึก เพิ่มเครดิตเป็น 60 วัน", "แก้รายละเอียดคอม").
 - DELETE: User wants to delete or remove an item (e.g. "ลบรายการกระดาษ", "ลบ b77", "ยกเลิกใบสั่งคอม").
@@ -87,7 +95,7 @@ Classify the user's intent into one of the following:
 
 Format the output strictly as a JSON object:
 {
-  "intent": "CREATE" | "SEARCH" | "UPDATE" | "DELETE" | "COMPLETE" | "UNKNOWN"
+  "intent": "STOCK" | "CREATE" | "SEARCH" | "UPDATE" | "DELETE" | "COMPLETE" | "UNKNOWN"
 }`
       }]
     }],
@@ -224,6 +232,66 @@ Format output strictly as JSON:
   if (parsed.update_data && parsed.update_data.title) {
     parsed.update_data.title = parsed.update_data.title.replace(/^(?:ให้แจ้งเตือน|ไม่แจ้งเตือน|ช่วยแจ้งเตือน|แจ้งเตือน|ช่วยเตือน|เตือน|บันทึก|จด|เพิ่ม)\s*/i, '').trim();
     parsed.update_data.title = parsed.update_data.title.replace(/^[:\-ー\s\.]+/, '').trim();
+  }
+
+  return parsed;
+}
+
+/**
+ * Extracts details specifically for stock operations.
+ */
+async function parseStockMessageWithAI(
+  messageText: string,
+  apiKey: string
+): Promise<{
+  action: 'ADD' | 'SUBTRACT' | 'SET' | 'DELETE' | 'CHECK';
+  name: string | null;
+  quantity: number | null;
+  unit: string | null;
+  category?: string | null;
+}> {
+  const modelName = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+  const body = {
+    contents: [{
+      parts: [{
+        text: `You are an inventory data extraction AI for JodJum (จำจด).
+Analyze this user message related to stock: "${messageText}"
+
+Extract the following fields and format strictly as JSON:
+{
+  "action": "ADD" (for adding stock/deposit/new item), "SUBTRACT" (for withdrawing/reducing/using stock), "SET" (for setting specific quantity), "DELETE" (for deleting item completely from stock table), or "CHECK" (for checking stock balance),
+  "name": "Clean, specific item name (e.g. 'แอลกอฮอล์ 70%', 'กระดาษ A4'). Strip action verbs like 'เบิก', 'เพิ่ม', 'แอด', 'ลบ', 'เช็ก', 'เช็ค', 'ตรวจสอบ' from the name.",
+  "quantity": number or null (e.g. for 'เบิก 5 ขวด' quantity is 5, for 'เช็กแอลกอฮอล์' quantity is null),
+  "unit": "string or null (e.g. 'ขวด', 'รีม', 'กล่อง', 'ชิ้น', 'หลอด', 'แกลลอน')",
+  "category": "string or null (strictly classify as 'อุปกรณ์สำนักงาน' or 'Laboratory' based on context, e.g. chemical/lab tools go to 'Laboratory', paper/pens go to 'อุปกรณ์สำนักงาน')"
+}`
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json"
+    }
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Stock parser API error: status ${response.status}`);
+  }
+
+  const data = await response.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const parsed = JSON.parse(rawText.trim());
+
+  // Clean stock name
+  if (parsed.name) {
+    parsed.name = parsed.name.replace(/^(?:เบิก|เพิ่ม|แอด|ลด|ลบ|เช็ก|ดู|สต็อก|สต๊อก|เช็ค)\s*/i, '').trim();
+    parsed.name = parsed.name.replace(/^[:\-ー\s\.]+/, '').trim();
   }
 
   return parsed;
@@ -379,6 +447,14 @@ export async function classifyAndParseMessageWithAI(
       console.log(`[AI Modular] Classified intent: ${intent} for message: "${messageText}"`);
 
       // Dispatch to specialized parsers
+      if (intent === 'STOCK') {
+        const stockData = await parseStockMessageWithAI(messageText, apiKey);
+        return {
+          intent: 'STOCK',
+          stock_data: stockData
+        };
+      }
+
       if (intent === 'CREATE') {
         const createData = await parseCreateMessageWithAI(messageText, apiKey);
         return {
@@ -485,6 +561,48 @@ function extractReminderDate(text: string): string | null {
  */
 function regexFallbackParser(messageText: string, existingItems: any[]): GeminiParsedOutput {
   const text = messageText.toLowerCase().trim();
+
+  // 0. STOCK intent in fallback
+  const isStockAction = /(?:สต็อก|สต๊อก|คลัง|จำนวน|ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|เบิก|หักยอด|ตัดยอด|แอดสินค้า|เพิ่มสต็อก|แล็บ|lab)/i.test(text);
+  if (isStockAction) {
+    let action: 'ADD' | 'SUBTRACT' | 'SET' | 'DELETE' | 'CHECK' = 'CHECK';
+    if (text.startsWith('เบิก') || text.startsWith('หัก') || text.startsWith('ลด') || text.includes('ตัดยอด') || text.includes('เบิกออก')) {
+      action = 'SUBTRACT';
+    } else if (text.startsWith('เพิ่ม') || text.startsWith('แอด') || text.includes('เติม') || text.includes('เพิ่มสต็อก')) {
+      action = 'ADD';
+    } else if (text.startsWith('ลบ') || text.includes('ลบสินค้า') || text.includes('เอาออก')) {
+      action = 'DELETE';
+    } else if (text.startsWith('ตั้ง') || text.startsWith('ใส่ยอด') || text.includes('เท่ากับ')) {
+      action = 'SET';
+    }
+
+    // Extract quantity
+    const qtyMatch = text.match(/\b(\d+)\b/);
+    const quantity = qtyMatch ? parseInt(qtyMatch[1]) : null;
+
+    // Common units
+    const unitMatch = text.match(/(ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|อัน|ม้วน|ถุง|ใบ)/);
+    const unit = unitMatch ? unitMatch[1] : 'ชิ้น';
+
+    // Extract name by removing action, quantity, units
+    let name = messageText
+      .replace(/^(?:เบิก|หัก|ลด|ตัดยอด|เพิ่ม|แอด|เติม|ลบ|ตั้ง|เช็ก|ดู|สต็อก|สต๊อก|เช็ค)\s*/i, '')
+      .replace(/\b\d+\b/g, '')
+      .replace(/(ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|อัน|ม้วน|ถุง|ใบ|วัน|เครดิต)/g, '')
+      .trim();
+    name = name.replace(/^[:\-ー\s\.]+/, '').trim();
+
+    return {
+      intent: 'STOCK',
+      stock_data: {
+        action,
+        name: name || null,
+        quantity,
+        unit,
+        category: text.includes('lab') || text.includes('แล็บ') || text.includes('สารเคมี') ? 'Laboratory' : 'อุปกรณ์สำนักงาน'
+      }
+    };
+  }
 
   // 1. SEARCH intent
   if (text.startsWith('ค้นหา') || text.startsWith('หา') || text.startsWith('search') || text.startsWith('find') || text.startsWith('ดู')) {

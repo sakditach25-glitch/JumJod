@@ -121,3 +121,16 @@ export interface Database {
     };
   };
 }
+
+export interface StockItem {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  quantity: number;
+  unit: string;
+  category: string;
+  created_at: string;
+  updated_at: string;
+}
+

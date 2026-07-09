@@ -271,6 +271,123 @@ export function createItemFlexBubble(item: any, appUrl: string) {
   return bubble;
 }
 
+/**
+ * Creates a beautiful LINE Flex Message Bubble for stock selection.
+ */
+export function createStockListFlex(stocks: any[], op: string, qty: number | null, searchName: string) {
+  const opLabel = op === 'SUBTRACT' ? 'เบิกออก' : op === 'ADD' ? 'เพิ่มสต็อก' : op === 'SET' ? 'ปรับยอด' : 'เช็กยอด';
+  
+  const contents = stocks.slice(0, 8).map(stock => {
+    const postbackData = `action=stock_execute&id=${stock.id}&op=${op}&qty=${qty || ''}`;
+    
+    return {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      margin: 'md',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            {
+              type: 'text',
+              text: stock.name,
+              weight: 'bold',
+              size: 'sm',
+              color: '#1e293b',
+              flex: 7,
+              wrap: true
+            },
+            {
+              type: 'text',
+              text: `${stock.quantity} ${stock.unit}`,
+              weight: 'bold',
+              size: 'sm',
+              color: stock.quantity > 0 ? '#10b981' : '#ef4444',
+              align: 'end',
+              flex: 3
+            }
+          ]
+        },
+        {
+          type: 'text',
+          text: `หมวดหมู่: ${stock.category}`,
+          size: 'xs',
+          color: '#94a3b8'
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: op === 'SUBTRACT' ? '#ef4444' : '#8b5cf6',
+          height: 'sm',
+          action: {
+            type: 'postback',
+            label: `${opLabel} รายการนี้`,
+            data: postbackData
+          }
+        },
+        {
+          type: 'separator',
+          margin: 'sm'
+        }
+      ]
+    };
+  });
+
+  // Append option to create as new item
+  const createNewPostback = `action=stock_create_prompt&name=${searchName}&qty=${qty || ''}`;
+  contents.push({
+    type: 'box',
+    layout: 'vertical',
+    spacing: 'sm',
+    margin: 'lg',
+    contents: [
+      {
+        type: 'button',
+        style: 'secondary',
+        color: '#64748b',
+        height: 'sm',
+        action: {
+          type: 'postback',
+          label: `➕ เพิ่มเป็นสินค้าใหม่: "${searchName}"`,
+          data: createNewPostback
+        }
+      }
+    ]
+  });
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#f8fafc',
+      contents: [
+        {
+          type: 'text',
+          text: `📦 ค้นพบสินค้าสต็อกสำหรับ: "${searchName}"`,
+          weight: 'bold',
+          size: 'sm',
+          color: '#475569'
+        },
+        {
+          type: 'text',
+          text: `โปรดกดเลือกรายการคลังด้านล่างเพื่อต้องการ ${opLabel}`,
+          size: 'xs',
+          color: '#94a3b8',
+          margin: 'xs'
+        }
+      ]
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      contents: contents
+    }
+  };
+}
 
 function verifySignature(body: string, signature: string, channelSecret: string): boolean {
   const hash = crypto
@@ -558,6 +675,97 @@ export async function POST(request: Request) {
               }
             };
             await sendLineReply(replyToken, flexMessage);
+          } else if (action === 'stock_execute') {
+            const id = params.get('id')!;
+            const op = params.get('op')!;
+            const qtyStr = params.get('qty');
+            const qty = qtyStr ? parseInt(qtyStr) : null;
+
+            const { data: stockItem, error: fetchError } = await supabaseAdmin
+              .from('stocks')
+              .select('*')
+              .eq('id', id)
+              .single();
+
+            if (fetchError || !stockItem) {
+              await sendLineReply(replyToken, '❌ ไม่พบสินค้าชิ้นนี้ในสต็อกแล้ว');
+              continue;
+            }
+
+            if (qty !== null && !isNaN(qty)) {
+              let newQty = stockItem.quantity;
+              if (op === 'SUBTRACT') {
+                newQty = Math.max(0, stockItem.quantity - qty);
+              } else if (op === 'ADD') {
+                newQty = stockItem.quantity + qty;
+              } else if (op === 'SET') {
+                newQty = qty;
+              }
+
+              const { error: updateError } = await supabaseAdmin
+                .from('stocks')
+                .update({ quantity: newQty, updated_at: new Date().toISOString() })
+                .eq('id', id);
+
+              if (updateError) {
+                await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
+              } else {
+                const opText = op === 'SUBTRACT' ? 'เบิกออก' : op === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
+                await sendLineReply(replyToken, `✅ ทำการ${opText}สินค้า "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦`);
+              }
+            } else {
+              memoryStateCache.set(lineUserId, {
+                action: 'stock_pending_qty',
+                stockId: id,
+                operation: op,
+                stockName: stockItem.name,
+                stockUnit: stockItem.unit
+              });
+              const opText = op === 'SUBTRACT' ? 'เบิก' : op === 'ADD' ? 'เติม' : 'ปรับยอด';
+              await sendLineReply(replyToken, `📦 ต้องการ${opText}สินค้า "${stockItem.name}" จำนวนเท่าไหร่ดีครับ?\n\n(กรุณาพิมพ์จำนวนเป็นตัวเลข เช่น "5" หรือ "10")`);
+            }
+          } else if (action === 'stock_create_prompt') {
+            const name = params.get('name')!;
+            const qtyStr = params.get('qty');
+            const qty = qtyStr ? parseInt(qtyStr) : null;
+
+            if (qty !== null && !isNaN(qty)) {
+              const { data: userProfile, error: profileErr } = await supabaseAdmin
+                .from('profiles')
+                .select('id')
+                .eq('line_user_id', lineUserId)
+                .single();
+
+              if (profileErr || !userProfile) {
+                await sendLineReply(replyToken, '❌ ไม่พบบัญชีผู้ใช้งานที่เชื่อมต่อกับไลน์นี้');
+                continue;
+              }
+
+              const category = name.includes('lab') || name.includes('แล็บ') || name.includes('สารเคมี') ? 'Laboratory' : 'อุปกรณ์สำนักงาน';
+              const { data: newItem, error: createError } = await supabaseAdmin
+                .from('stocks')
+                .insert([{
+                  user_id: userProfile.id,
+                  name: name,
+                  quantity: qty,
+                  unit: 'ชิ้น',
+                  category: category
+                }])
+                .select('*')
+                .single();
+
+              if (createError || !newItem) {
+                await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างสินค้าใหม่');
+              } else {
+                await sendLineReply(replyToken, `✅ เพิ่มสินค้าใหม่ "${newItem.name}" จำนวน ${newItem.quantity} ${newItem.unit} เข้าคลังสำเร็จแล้วครับ! 📦`);
+              }
+            } else {
+              memoryStateCache.set(lineUserId, {
+                action: 'stock_pending_create_qty',
+                stockName: name
+              });
+              await sendLineReply(replyToken, `📦 ต้องการสร้างสินค้าใหม่ "${name}"\nมีจำนวนเริ่มต้นเท่าไหร่ดีครับ?\n\n(กรุณาพิมพ์ตัวเลข เช่น "10")`);
+            }
           }
         } catch (error) {
           console.error('Error handling postback:', error);
@@ -704,6 +912,84 @@ export async function POST(request: Request) {
       }
 
       const userState = memoryStateCache.get(lineUserId);
+      
+      // Handle stock pending quantity input
+      if (userState && userState.action === 'stock_pending_qty') {
+        const qtyMatch = messageText.match(/\b(\d+)\b/);
+        if (qtyMatch) {
+          const qty = parseInt(qtyMatch[1]);
+          const { data: stockItem } = await supabaseAdmin
+            .from('stocks')
+            .select('*')
+            .eq('id', userState.stockId)
+            .single();
+
+          if (!stockItem) {
+            await sendLineReply(replyToken, '❌ ไม่พบสินค้าชิ้นนี้ในสต็อกแล้ว');
+            memoryStateCache.delete(lineUserId);
+            continue;
+          }
+
+          let newQty = stockItem.quantity;
+          if (userState.operation === 'SUBTRACT') {
+            newQty = Math.max(0, stockItem.quantity - qty);
+          } else if (userState.operation === 'ADD') {
+            newQty = stockItem.quantity + qty;
+          } else if (userState.operation === 'SET') {
+            newQty = qty;
+          }
+
+          const { error: updateError } = await supabaseAdmin
+            .from('stocks')
+            .update({ quantity: newQty, updated_at: new Date().toISOString() })
+            .eq('id', userState.stockId);
+
+          memoryStateCache.delete(lineUserId);
+
+          if (updateError) {
+            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
+          } else {
+            const opText = userState.operation === 'SUBTRACT' ? 'เบิกออก' : userState.operation === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
+            await sendLineReply(replyToken, `✅ ทำการ${opText}สินค้า "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦`);
+          }
+        } else {
+          await sendLineReply(replyToken, '❌ กรุณาระบุจำนวนเป็นตัวเลขอีกครั้งครับ เช่น "5" หรือ "10"');
+        }
+        continue;
+      }
+
+      // Handle stock pending create quantity input
+      if (userState && userState.action === 'stock_pending_create_qty') {
+        const qtyMatch = messageText.match(/\b(\d+)\b/);
+        if (qtyMatch) {
+          const qty = parseInt(qtyMatch[1]);
+          const category = userState.stockName.includes('lab') || userState.stockName.includes('แล็บ') || userState.stockName.includes('สารเคมี') ? 'Laboratory' : 'อุปกรณ์สำนักงาน';
+          
+          const { data: newItem, error: createError } = await supabaseAdmin
+            .from('stocks')
+            .insert([{
+              user_id: profile.id,
+              name: userState.stockName,
+              quantity: qty,
+              unit: 'ชิ้น',
+              category: category
+            }])
+            .select('*')
+            .single();
+
+          memoryStateCache.delete(lineUserId);
+
+          if (createError || !newItem) {
+            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างสินค้าใหม่');
+          } else {
+            await sendLineReply(replyToken, `✅ เพิ่มสินค้าใหม่ "${newItem.name}" จำนวน ${newItem.quantity} ${newItem.unit} เข้าคลังสำเร็จแล้วครับ! 📦`);
+          }
+        } else {
+          await sendLineReply(replyToken, '❌ กรุณาระบุจำนวนเริ่มต้นเป็นตัวเลขอีกครั้งครับ เช่น "10"');
+        }
+        continue;
+      }
+
       if (userState && userState.action === 'editing') {
         let updateTitle = messageText;
         let credit_term: any = null;
@@ -777,6 +1063,136 @@ export async function POST(request: Request) {
       const parsedResult = await classifyAndParseMessageWithAI(messageText, existingItems);
 
       switch (parsedResult.intent) {
+        case 'STOCK': {
+          const stockData = parsedResult.stock_data;
+          if (!stockData) {
+            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการตีความข้อมูลสต็อก');
+            continue;
+          }
+
+          const searchName = stockData.name || '';
+          
+          const { data: matchedStocks, error: searchError } = await supabaseAdmin
+            .from('stocks')
+            .select('*')
+            .eq('user_id', profile.id)
+            .ilike('name', `%${searchName}%`);
+
+          if (searchError) {
+            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการค้นหาคลังสินค้า');
+            continue;
+          }
+
+          // Case 1: No match found
+          if (!matchedStocks || matchedStocks.length === 0) {
+            if (stockData.action === 'ADD' && stockData.quantity !== null) {
+              // Create immediately
+              const category = searchName.includes('lab') || searchName.includes('แล็บ') || searchName.includes('สารเคมี') ? 'Laboratory' : 'อุปกรณ์สำนักงาน';
+              const { data: newItem, error: createError } = await supabaseAdmin
+                .from('stocks')
+                .insert([{
+                  user_id: profile.id,
+                  name: searchName,
+                  quantity: stockData.quantity,
+                  unit: stockData.unit || 'ชิ้น',
+                  category: category
+                }])
+                .select('*')
+                .single();
+
+              if (createError || !newItem) {
+                await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างสินค้าใหม่');
+              } else {
+                await sendLineReply(replyToken, `✅ ไม่พบสินค้าในคลัง จึงทำการสร้างสินค้าใหม่:\n📦 "${newItem.name}" จำนวนเริ่มต้น ${newItem.quantity} ${newItem.unit} สำเร็จแล้วครับ!`);
+              }
+            } else {
+              const createNewPostback = `action=stock_create_prompt&name=${searchName}&qty=${stockData.quantity || ''}`;
+              
+              const notFoundFlex = {
+                type: 'bubble',
+                body: {
+                  type: 'box',
+                  layout: 'vertical',
+                  spacing: 'md',
+                  contents: [
+                    {
+                      type: 'text',
+                      text: `🔎 ไม่พบสินค้าชื่อ "${searchName}" ในคลัง`,
+                      weight: 'bold',
+                      size: 'md',
+                      color: '#1e293b'
+                    },
+                    {
+                      type: 'text',
+                      text: 'คุณต้องการบันทึกแอดสินค้าชิ้นนี้เข้าไปในระบบสต็อกใหม่เลยไหมครับ?',
+                      size: 'xs',
+                      color: '#64748b',
+                      wrap: true
+                    },
+                    {
+                      type: 'button',
+                      style: 'primary',
+                      color: '#8b5cf6',
+                      height: 'sm',
+                      action: {
+                        type: 'postback',
+                        label: '➕ สร้างสินค้าใหม่ในคลัง',
+                        data: createNewPostback
+                      }
+                    }
+                  ]
+                }
+              };
+
+              await sendLineReply(replyToken, {
+                type: 'flex',
+                altText: `⚠️ ไม่พบสินค้า "${searchName}" ในคลัง`,
+                contents: notFoundFlex
+              });
+            }
+            continue;
+          }
+
+          // Case 2: Exact name match found (or exactly 1 match) and quantity is provided
+          const exactMatch = matchedStocks.find(s => s.name.toLowerCase() === searchName.toLowerCase());
+          const targetStock = exactMatch || (matchedStocks.length === 1 ? matchedStocks[0] : null);
+
+          if (targetStock && stockData.quantity !== null) {
+            let newQty = targetStock.quantity;
+            if (stockData.action === 'SUBTRACT') {
+              newQty = Math.max(0, targetStock.quantity - stockData.quantity);
+            } else if (stockData.action === 'ADD') {
+              newQty = targetStock.quantity + stockData.quantity;
+            } else if (stockData.action === 'SET') {
+              newQty = stockData.quantity;
+            }
+
+            const { error: updateError } = await supabaseAdmin
+              .from('stocks')
+              .update({ quantity: newQty, updated_at: new Date().toISOString() })
+              .eq('id', targetStock.id);
+
+            if (updateError) {
+              await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
+            } else {
+              const opText = stockData.action === 'SUBTRACT' ? 'เบิกออก' : stockData.action === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
+              await sendLineReply(replyToken, `✅ ทำการ${opText}สินค้า "${targetStock.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${targetStock.quantity} ${targetStock.unit}\nทำรายการ: ${stockData.quantity} ${targetStock.unit}\nยอดคงเหลือใหม่: ${newQty} ${targetStock.unit} 📦`);
+            }
+            continue;
+          }
+
+          // Case 3: Multiple matches or quantity is missing
+          const sortedStocks = matchedStocks.sort((a, b) => a.name.localeCompare(b.name));
+          const flexBubble = createStockListFlex(sortedStocks, stockData.action, stockData.quantity, searchName);
+          
+          await sendLineReply(replyToken, {
+            type: 'flex',
+            altText: `📦 รายการคลังที่ใกล้เคียงกับ "${searchName}"`,
+            contents: flexBubble
+          });
+          break;
+        }
+
         case 'SEARCH': {
           const query = parsedResult.search_query || '';
           
