@@ -702,7 +702,7 @@ export async function POST(request: Request) {
                 newQty = Math.max(0, stockItem.quantity - qty);
               } else if (op === 'ADD') {
                 newQty = stockItem.quantity + qty;
-              } else if (op === 'SET') {
+              } else if (op === 'SET' || op === 'CHECK') {
                 newQty = qty;
               }
 
@@ -957,13 +957,13 @@ export async function POST(request: Request) {
           }
 
           let newQty = stockItem.quantity;
-          if (userState.operation === 'SUBTRACT') {
-            newQty = Math.max(0, stockItem.quantity - qty);
-          } else if (userState.operation === 'ADD') {
-            newQty = stockItem.quantity + qty;
-          } else if (userState.operation === 'SET') {
-            newQty = qty;
-          }
+           if (userState.operation === 'SUBTRACT') {
+             newQty = Math.max(0, stockItem.quantity - qty);
+           } else if (userState.operation === 'ADD') {
+             newQty = stockItem.quantity + qty;
+           } else if (userState.operation === 'SET' || userState.operation === 'CHECK') {
+             newQty = qty;
+           }
 
           const { error: updateError } = await supabaseAdmin
             .from('stocks')

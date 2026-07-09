@@ -572,13 +572,11 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
   const isStockAction = /(?:สต็อก|สต๊อก|คลัง|จำนวน|ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|เบิก|หักยอด|ตัดยอด|แอดวัสดุ|เพิ่มสต็อก|แล็บ|lab|วัสดุ)/i.test(text);
   if (isStockAction) {
     let action: 'ADD' | 'SUBTRACT' | 'SET' | 'DELETE' | 'CHECK' = 'CHECK';
-    if (text.startsWith('เบิก') || text.startsWith('หัก') || text.startsWith('ลด') || text.includes('ตัดยอด') || text.includes('เบิกออก')) {
+    if (text.startsWith('เบิก') || text.startsWith('หัก') || text.startsWith('ลด') || text.includes('ตัดยอด') || text.includes('เบิกออก') || text.includes('เอาไปใช้') || text.includes('หักลบ') || text.startsWith('ลบ')) {
       action = 'SUBTRACT';
-    } else if (text.startsWith('เพิ่ม') || text.startsWith('แอด') || text.includes('เติม') || text.includes('เพิ่มสต็อก')) {
+    } else if (text.startsWith('เพิ่ม') || text.startsWith('แอด') || text.includes('เติม') || text.includes('เพิ่มสต็อก') || text.includes('บวกเพิ่ม')) {
       action = 'ADD';
-    } else if (text.startsWith('ลบ') || text.includes('ลบวัสดุ') || text.includes('เอาออก')) {
-      action = 'DELETE';
-    } else if (text.startsWith('ตั้ง') || text.startsWith('ใส่ยอด') || text.includes('เท่ากับ')) {
+    } else if (text.startsWith('ตั้ง') || text.includes('ปรับยอด') || text.startsWith('ใส่ยอด') || text.includes('เท่ากับ')) {
       action = 'SET';
     }
 
