@@ -256,49 +256,50 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {/* Detail Overlay Drawer */}
+      {/* Detail Overlay Modal */}
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-end">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <div 
             className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"
             onClick={() => setSelectedEvent(null)}
           />
           
-          {/* Drawer Container */}
-          <div className="relative w-full max-w-md h-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl p-6 flex flex-col justify-between z-10 animate-slide-in">
-            <div>
-              {/* Close and Title */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800/80 mb-6">
-                <h2 className="text-lg font-bold bg-gradient-to-r from-violet-650 to-indigo-650 dark:from-violet-400 dark:to-indigo-200 bg-clip-text text-transparent">
-                  รายละเอียดกิจกรรมจัดซื้อ
-                </h2>
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+          {/* Modal Container */}
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 flex flex-col z-10 animate-scale-up max-h-[85vh] overflow-y-auto">
+            {/* Close and Title */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800/80 mb-6 shrink-0">
+              <h2 className="text-lg font-bold bg-gradient-to-r from-violet-650 to-indigo-650 dark:from-violet-400 dark:to-indigo-200 bg-clip-text text-transparent">
+                รายละเอียดกิจกรรมจัดซื้อ
+              </h2>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
+            {/* Scrollable Content */}
+            <div className="space-y-6 flex-1 pr-1 overflow-y-auto">
               {/* Event specific type indicator */}
-              <div className="mb-6">
+              <div>
                 {selectedEvent.type === 'reminder' ? (
-                  <div className="flex items-center gap-2 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
-                    <Clock className="w-5 h-5" />
+                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
+                    <Clock className="w-5 h-5 shrink-0" />
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider">วันแจ้งเตือนการจัดการ</h4>
-                      <p className="text-[11px] text-amber-600 dark:text-amber-450/80 mt-0.5 font-semibold">
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-semibold">
                         {moment(selectedEvent.start).format('DD MMMM YYYY, HH:mm น.')}
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400">
-                    <CalendarIcon className="w-5 h-5" />
+                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400">
+                    <CalendarIcon className="w-5 h-5 shrink-0" />
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider">วันครบกำหนดชำระจริง</h4>
-                      <p className="text-[11px] text-emerald-600 dark:text-emerald-450/80 mt-0.5 font-semibold">
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5 font-semibold">
                         {moment(selectedEvent.start).format('DD MMMM YYYY')} (ชำระตามเครดิตเทอม)
                       </p>
                     </div>
@@ -320,7 +321,7 @@ export default function CalendarPage() {
                     <label className="block text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider mb-1">
                       รายละเอียด
                     </label>
-                    <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-200/50 dark:border-slate-800/40">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-200/50 dark:border-slate-800/40 whitespace-pre-wrap">
                       {selectedEvent.item.description}
                     </p>
                   </div>
@@ -355,23 +356,25 @@ export default function CalendarPage() {
                   )}
                 </div>
 
-                {selectedEvent.item.po_date && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        วันที่ออก PO
-                      </label>
-                      <span className="flex items-center gap-1 text-xs text-slate-300 font-medium">
-                        <FileText className="w-3.5 h-3.5 text-slate-500" />
-                        <span>{moment(selectedEvent.item.po_date).format('DD/MM/YYYY')}</span>
-                      </span>
-                    </div>
+                {(selectedEvent.item.po_date || selectedEvent.item.budget_due_date) && (
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800/60">
+                    {selectedEvent.item.po_date && (
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          วันที่ออก PO
+                        </label>
+                        <span className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                          <FileText className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{moment(selectedEvent.item.po_date).format('DD/MM/YYYY')}</span>
+                        </span>
+                      </div>
+                    )}
                     {selectedEvent.item.budget_due_date && (
                       <div>
                         <label className="block text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider mb-1">
                           วันที่จ่ายเงินจริง
                         </label>
-                        <span className="flex items-center gap-1 text-xs text-emerald-650 dark:text-emerald-400 font-bold">
+                        <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-bold">
                           <CalendarIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500" />
                           <span>{moment(selectedEvent.item.budget_due_date).format('DD/MM/YYYY')}</span>
                         </span>
@@ -382,17 +385,17 @@ export default function CalendarPage() {
 
                 {/* Uploaded image details */}
                 {selectedEvent.item.image_url && (
-                  <div>
+                  <div className="pt-4 border-t border-slate-100 dark:border-slate-800/60">
                     <label className="block text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider mb-1.5">
                       เอกสารแนบประกอบ
                     </label>
-                    <div className="relative w-full h-40 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
+                    <div className="relative w-full h-44 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner">
                       <Image
                         src={selectedEvent.item.image_url}
                         alt={selectedEvent.item.title}
                         fill
-                        sizes="100vw"
-                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, 400px"
+                        className="object-cover hover:scale-102 transition-transform duration-300"
                       />
                     </div>
                   </div>
@@ -401,7 +404,7 @@ export default function CalendarPage() {
             </div>
 
             {/* Footer Close */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800/80">
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800/80 mt-6 shrink-0">
               <button
                 onClick={() => setSelectedEvent(null)}
                 className="w-full py-2.5 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs transition-all duration-200 cursor-pointer"
