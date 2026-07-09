@@ -274,140 +274,210 @@ export function createItemFlexBubble(item: any, appUrl: string) {
 /**
  * Creates a beautiful LINE Flex Message Bubble for stock selection.
  */
-export function createStockListFlex(stocks: any[], op: string, qty: number | null, searchName: string) {
+/**
+ * Creates a beautiful LINE Flex Message Bubble for a single stock item.
+ */
+export function createStockFlexBubble(stock: any, op: string, qty: number | null) {
   const opLabel = op === 'SUBTRACT' ? 'เบิกออก' : op === 'ADD' ? 'เพิ่มสต็อก' : op === 'SET' ? 'ปรับยอด' : 'เช็กยอด';
+  const postbackData = `action=stock_execute&id=${stock.id}&op=${op}&qty=${qty || ''}`;
+  const isAlert = stock.quantity <= (stock.min_threshold ?? 0);
+  const displayName = stock.name;
+  const priorityLabel = stock.priority === 'High' ? '🔴 ด่วนมาก' : stock.priority === 'Medium' ? '🟡 ปานกลาง' : '🟢 ทั่วไป';
   
-  const contents: any[] = stocks.slice(0, 8).map(stock => {
-    const postbackData = `action=stock_execute&id=${stock.id}&op=${op}&qty=${qty || ''}`;
-    const isAlert = stock.quantity <= (stock.min_threshold ?? 0);
-    const displayName = isAlert ? `⚠️ ${stock.name} (ใกล้หมด)` : stock.name;
-    const nameColor = isAlert ? '#ef4444' : '#1e293b';
-    const priorityLabel = stock.priority === 'High' ? '🔴 ด่วนมาก' : stock.priority === 'Medium' ? '🟡 ปานกลาง' : '🟢 ทั่วไป';
-    
-    return {
-      type: 'box',
-      layout: 'vertical',
-      spacing: 'sm',
-      margin: 'md',
-      contents: [
-        {
-          type: 'box',
-          layout: 'horizontal',
-          contents: [
-            {
-              type: 'text',
-              text: displayName,
-              weight: 'bold',
-              size: 'sm',
-              color: nameColor,
-              flex: 7,
-              wrap: true
-            },
-            {
-              type: 'text',
-              text: `${stock.quantity} ${stock.unit}`,
-              weight: 'bold',
-              size: 'sm',
-              color: isAlert ? '#ef4444' : '#10b981',
-              align: 'end',
-              flex: 3
-            }
-          ]
-        },
-        {
-          type: 'text',
-          text: `หมวดหมู่: ${stock.category} • ความสำคัญ: ${priorityLabel}`,
-          size: 'xs',
-          color: '#94a3b8'
-        },
-        {
-          type: 'box',
-          layout: 'horizontal',
-          spacing: 'sm',
-          contents: [
-            {
-              type: 'button',
-              style: 'primary',
-              color: op === 'SUBTRACT' ? '#ef4444' : '#8b5cf6',
-              height: 'sm',
-              flex: 3,
-              action: {
-                type: 'postback',
-                label: opLabel,
-                data: postbackData
-              }
-            },
-            {
-              type: 'button',
-              style: 'secondary',
-              height: 'sm',
-              flex: 2,
-              action: {
-                type: 'postback',
-                label: '✍️ แก้ชื่อ',
-                data: `action=stock_request_edit&id=${stock.id}`
-              }
-            }
-          ]
-        },
-        {
-          type: 'separator',
-          margin: 'sm'
-        }
-      ]
-    };
-  });
-
-  // Append option to create as new item
-  const createNewPostback = `action=stock_create_prompt&name=${searchName}&qty=${qty || ''}`;
-  contents.push({
-    type: 'box',
-    layout: 'vertical',
-    spacing: 'sm',
-    margin: 'lg',
-    contents: [
-      {
-        type: 'button',
-        style: 'secondary',
-        color: '#64748b',
-        height: 'sm',
-        action: {
-          type: 'postback',
-          label: `➕ เพิ่มเป็นวัสดุใหม่: "${searchName}"`,
-          data: createNewPostback
-        }
-      }
-    ]
-  });
-
-  return {
+  const bubble: any = {
     type: 'bubble',
     size: 'mega',
-    header: {
-      type: 'box',
-      layout: 'vertical',
-      backgroundColor: '#f8fafc',
-      contents: [
-        {
-          type: 'text',
-          text: `📦 ค้นพบวัสดุในสต็อกสำหรับ: "${searchName}"`,
-          weight: 'bold',
-          size: 'sm',
-          color: '#475569'
-        },
-        {
-          type: 'text',
-          text: `โปรดกดเลือกรายการคลังด้านล่างเพื่อต้องการ ${opLabel}`,
-          size: 'xs',
-          color: '#94a3b8',
-          margin: 'xs'
-        }
-      ]
-    },
     body: {
       type: 'box',
       layout: 'vertical',
-      contents: contents
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            {
+              type: 'text',
+              text: `📦 หมวดหมู่: ${stock.category || 'ทั่วไป'}`,
+              weight: 'bold',
+              size: 'xs',
+              color: '#8b5cf6',
+              flex: 1
+            },
+            {
+              type: 'text',
+              text: isAlert ? '⚠️ ใกล้หมด' : '🟢 ปกติ',
+              weight: 'bold',
+              size: 'xs',
+              color: isAlert ? '#ef4444' : '#10b981',
+              align: 'end',
+              flex: 0
+            }
+          ]
+        },
+        {
+          type: 'text',
+          text: displayName,
+          weight: 'bold',
+          size: 'md',
+          margin: 'md',
+          wrap: true,
+          color: '#1e293b'
+        },
+        {
+          type: 'separator',
+          margin: 'md'
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          margin: 'md',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                {
+                  type: 'text',
+                  text: 'คงเหลือปัจจุบัน:',
+                  size: 'xs',
+                  color: '#94a3b8',
+                  flex: 3
+                },
+                {
+                  type: 'text',
+                  text: `${stock.quantity} ${stock.unit}`,
+                  size: 'sm',
+                  weight: 'bold',
+                  color: isAlert ? '#ef4444' : '#10b981',
+                  flex: 7
+                }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                {
+                  type: 'text',
+                  text: 'เกณฑ์ขั้นต่ำ:',
+                  size: 'xs',
+                  color: '#94a3b8',
+                  flex: 3
+                },
+                {
+                  type: 'text',
+                  text: `${stock.min_threshold ?? 0} ${stock.unit}`,
+                  size: 'xs',
+                  color: '#64748b',
+                  flex: 7
+                }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                {
+                  type: 'text',
+                  text: 'ความสำคัญ:',
+                  size: 'xs',
+                  color: '#94a3b8',
+                  flex: 3
+                },
+                {
+                  type: 'text',
+                  text: priorityLabel,
+                  size: 'xs',
+                  color: '#334155',
+                  flex: 7
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    footer: {
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'button',
+          style: 'primary',
+          color: op === 'SUBTRACT' ? '#ef4444' : '#8b5cf6',
+          height: 'sm',
+          flex: 3,
+          action: {
+            type: 'postback',
+            label: opLabel,
+            data: postbackData
+          }
+        },
+        {
+          type: 'button',
+          style: 'secondary',
+          height: 'sm',
+          flex: 2,
+          action: {
+            type: 'postback',
+            label: '✍️ แก้ชื่อ',
+            data: `action=stock_request_edit&id=${stock.id}`
+          }
+        }
+      ]
+    }
+  };
+
+  return bubble;
+}
+
+/**
+ * Creates a beautiful LINE Flex Message Bubble to prompt adding a new stock item.
+ */
+export function createStockCreateFlexBubble(searchName: string, qty: number | null) {
+  const createNewPostback = `action=stock_create_prompt&name=${searchName}&qty=${qty || ''}`;
+  return {
+    type: 'bubble',
+    size: 'mega',
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'text',
+          text: '➕ เพิ่มวัสดุใหม่',
+          weight: 'bold',
+          size: 'md',
+          color: '#8b5cf6'
+        },
+        {
+          type: 'text',
+          text: `ไม่พบวัสดุที่ตรงใจ หรือต้องการสร้างเพิ่มใหม่สำหรับ "${searchName}" หรือไม่?`,
+          size: 'xs',
+          color: '#64748b',
+          margin: 'md',
+          wrap: true
+        }
+      ]
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#8b5cf6',
+          height: 'sm',
+          action: {
+            type: 'postback',
+            label: `สร้างวัสดุ "${searchName}"`,
+            data: createNewPostback
+          }
+        }
+      ]
     }
   };
 }
@@ -1087,12 +1157,15 @@ export async function POST(request: Request) {
           continue;
         }
 
-        const flexBubble = createStockListFlex(matchedStocks, 'CHECK', null, 'คลังวัสดุทั้งหมด');
+        const bubbles = matchedStocks.slice(0, 10).map(stock => createStockFlexBubble(stock, 'CHECK', null));
         
         await sendLineReply(replyToken, {
           type: 'flex',
           altText: '📦 รายการสต็อกวัสดุทั้งหมดของคุณ',
-          contents: flexBubble
+          contents: {
+            type: 'carousel',
+            contents: bubbles
+          }
         });
         continue;
       }
@@ -1526,12 +1599,20 @@ export async function POST(request: Request) {
 
           // Case 3: Multiple matches or quantity is missing
           const sortedStocks = matchedStocks.sort((a, b) => a.name.localeCompare(b.name));
-          const flexBubble = createStockListFlex(sortedStocks, stockData.action, stockData.quantity, searchName);
+          const bubbles = sortedStocks.slice(0, 9).map(stock => createStockFlexBubble(stock, stockData.action, stockData.quantity));
           
+          // Append option to create as new item card at the end of the carousel
+          if (searchName) {
+            bubbles.push(createStockCreateFlexBubble(searchName, stockData.quantity));
+          }
+
           await sendLineReply(replyToken, {
             type: 'flex',
             altText: `📦 รายการคลังที่ใกล้เคียงกับ "${searchName}"`,
-            contents: flexBubble
+            contents: {
+              type: 'carousel',
+              contents: bubbles
+            }
           });
           break;
         }
