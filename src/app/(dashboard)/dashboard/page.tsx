@@ -481,9 +481,9 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Cards List */}
-                <div className="flex-1 space-y-3.5 overflow-y-auto max-h-[70vh] pr-1">
+                <div className="flex-1 overflow-y-auto max-h-[calc(100vh-320px)] min-h-[380px] pr-1 grid grid-cols-1 md:grid-cols-2 gap-4 content-start">
                   {columnItems.length === 0 ? (
-                    <div className="h-28 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl flex items-center justify-center text-center p-4">
+                    <div className="col-span-full h-28 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl flex items-center justify-center text-center p-4">
                       <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">ไม่มีรายการในสถานะนี้</span>
                     </div>
                   ) : (
