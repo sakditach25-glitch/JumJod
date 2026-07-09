@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { ItemStatus } from '@/lib/types';
-import { classifyAndParseMessageWithAI, calculateDueDate } from '@/lib/ai';
+import { classifyAndParseMessageWithAI, calculateDueDate, getGeminiApiKey, parseStockMessageWithAI } from '@/lib/ai';
 
 // Initialize Supabase admin client using the service role key to bypass RLS policies
 const supabaseAdmin = createClient(
@@ -389,6 +389,135 @@ export function createStockListFlex(stocks: any[], op: string, qty: number | nul
       type: 'box',
       layout: 'vertical',
       contents: contents
+    }
+  };
+}
+
+// Helper to get or update user's active mode state (persisted in DB + in-memory cache)
+async function getUserModeState(profile: any, lineUserId: string, supabaseAdmin: any): Promise<'reminder' | 'stock' | null> {
+  const now = new Date();
+  
+  // Check memory cache first
+  let cached = memoryStateCache.get(`${lineUserId}_mode`);
+  if (!cached && profile.pending_item_data && typeof profile.pending_item_data === 'object') {
+    const dbData = profile.pending_item_data as any;
+    if (dbData.activeMode && dbData.lastActivity) {
+      cached = {
+        activeMode: dbData.activeMode,
+        lastActivity: dbData.lastActivity
+      };
+    }
+  }
+
+  if (cached) {
+    const lastActive = new Date(cached.lastActivity);
+    const diffMinutes = (now.getTime() - lastActive.getTime()) / (1000 * 60);
+    
+    if (diffMinutes < 15) {
+      // Still active, update last activity time
+      cached.lastActivity = now.toISOString();
+      memoryStateCache.set(`${lineUserId}_mode`, cached);
+      
+      // Update DB in background
+      supabaseAdmin
+        .from('profiles')
+        .update({
+          pending_item_data: {
+            activeMode: cached.activeMode,
+            lastActivity: cached.lastActivity
+          }
+        })
+        .eq('id', profile.id)
+        .then(() => {});
+        
+      return cached.activeMode;
+    } else {
+      // Inactive for more than 15 minutes, reset to null
+      memoryStateCache.delete(`${lineUserId}_mode`);
+      await supabaseAdmin
+        .from('profiles')
+        .update({ pending_item_data: null })
+        .eq('id', profile.id);
+      return null;
+    }
+  }
+  
+  return null;
+}
+
+// Helper to set user's active mode state
+async function setUserModeState(profile: any, lineUserId: string, mode: 'reminder' | 'stock' | null, supabaseAdmin: any) {
+  const now = new Date();
+  if (mode) {
+    const state = { activeMode: mode, lastActivity: now.toISOString() };
+    memoryStateCache.set(`${lineUserId}_mode`, state);
+    await supabaseAdmin
+      .from('profiles')
+      .update({ pending_item_data: state })
+      .eq('id', profile.id);
+  } else {
+    memoryStateCache.delete(`${lineUserId}_mode`);
+    await supabaseAdmin
+      .from('profiles')
+      .update({ pending_item_data: null })
+      .eq('id', profile.id);
+  }
+}
+
+// Helper to create mode selection flex message
+function createModeSelectionFlex() {
+  return {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#f8fafc',
+      contents: [
+        {
+          type: 'text',
+          text: '🤖 ยินดีต้อนรับสู่ระบบ จำจด (JumJod)',
+          weight: 'bold',
+          size: 'md',
+          color: '#1e293b'
+        },
+        {
+          type: 'text',
+          text: 'กรุณาเลือกโหมดการทำงานเพื่อเริ่มป้อนข้อมูล:',
+          size: 'xs',
+          color: '#64748b',
+          margin: 'xs'
+        }
+      ]
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#8b5cf6',
+          height: 'sm',
+          action: {
+            type: 'message',
+            label: '📝 โหมดบันทึกช่วยจำ & แจ้งเตือน',
+            text: 'บันทึกช่วยจำ'
+          }
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#10b981',
+          height: 'sm',
+          action: {
+            type: 'message',
+            label: '📦 โหมดสต็อก & คลังวัสดุ',
+            text: 'สต็อก'
+          }
+        }
+      ]
     }
   };
 }
@@ -851,6 +980,40 @@ export async function POST(request: Request) {
         .limit(30);
       const existingItems = itemsData || [];
 
+      // 2.1 Mode switching and context checks
+      const cleanMessageText = messageText.trim().toLowerCase();
+      if (cleanMessageText === 'บันทึกช่วยจำ') {
+        await setUserModeState(profile, lineUserId, 'reminder', supabaseAdmin);
+        await sendLineReply(replyToken, '📝 เข้าสู่โหมด **"บันทึกช่วยจำพร้อมแจ้งเตือน"** เรียบร้อยแล้วครับ! คุณสามารถพิมพ์จดรายการจัดซื้อหรือการแจ้งเตือนต่าง ๆ ได้ทันทีจ้า');
+        continue;
+      }
+      
+      if (cleanMessageText === 'สต็อก' || cleanMessageText === 'สต๊อก') {
+        await setUserModeState(profile, lineUserId, 'stock', supabaseAdmin);
+        await sendLineReply(replyToken, '📦 เข้าสู่โหมด **"สต็อกวัสดุคงเหลือ"** เรียบร้อยแล้วครับ! คุณสามารถพิมพ์ทำรายการเบิก/หัก/เติม/ปรับยอดวัสดุต่าง ๆ ได้ทันทีจ้า');
+        continue;
+      }
+
+      if (cleanMessageText === 'รีเซ็ตโหมด' || cleanMessageText === 'ออกโหมด') {
+        await setUserModeState(profile, lineUserId, null, supabaseAdmin);
+        await sendLineReply(replyToken, '🔄 รีเซ็ตโหมดการทำงานกลับสู่โหมดเริ่มต้นแล้วครับ');
+        continue;
+      }
+
+      // Check current active mode
+      const activeMode = await getUserModeState(profile, lineUserId, supabaseAdmin);
+      
+      // If no mode is active, block and prompt to choose mode
+      if (!activeMode) {
+        const modeFlex = createModeSelectionFlex();
+        await sendLineReply(replyToken, {
+          type: 'flex',
+          altText: '🤖 กรุณาเลือกโหมดการทำงานก่อนพิมพ์สั่งงานครับ',
+          contents: modeFlex
+        });
+        continue;
+      }
+
       // 3. Stateful edit mode check & "รายการ" command interception
       if (['สต็อก', 'ดูสต็อก', 'เช็กสต็อก', 'วัสดุ', 'ดูวัสดุ', 'เช็คสต็อก', 'เช็ควัสดุ'].includes(messageText.trim().toLowerCase())) {
         const { data: matchedStocks, error: searchError } = await supabaseAdmin
@@ -1086,7 +1249,26 @@ export async function POST(request: Request) {
 
       // 4. Initial Request intent classification using AI
       console.log(`[LINE BOT] Classifying user query: "${messageText}"`);
-      const parsedResult = await classifyAndParseMessageWithAI(messageText, existingItems);
+      let parsedResult = await classifyAndParseMessageWithAI(messageText, existingItems);
+
+      // Enforce mode context
+      if (activeMode === 'stock') {
+        if (parsedResult.intent !== 'STOCK' && parsedResult.intent !== 'SEARCH' && parsedResult.intent !== 'DELETE') {
+          // If it got classified as CREATE or UPDATE, force it to parse as stock action!
+          const apiKey = getGeminiApiKey();
+          const stockData = await parseStockMessageWithAI(messageText, apiKey || '');
+          parsedResult = {
+            intent: 'STOCK',
+            stock_data: stockData
+          };
+        }
+      } else if (activeMode === 'reminder') {
+        if (parsedResult.intent === 'STOCK') {
+          // If they typed stock action in reminder mode, tell them to switch mode
+          await sendLineReply(replyToken, "⚠️ ตอนนี้คุณอยู่ในโหมด **'บันทึกช่วยจำพร้อมแจ้งเตือน'** ครับ หากต้องการจัดการสต็อกวัสดุ กรุณาพิมพ์ 'สต็อก' เพื่อสลับโหมดก่อนนะครับ");
+          continue;
+        }
+      }
 
       switch (parsedResult.intent) {
         case 'STOCK': {
@@ -1181,9 +1363,38 @@ export async function POST(request: Request) {
             continue;
           }
 
-          // Case 2: Exact name match found (or exactly 1 match) and quantity is provided
+          // Case 2: Exact name match found (or exactly 1 match)
           const exactMatch = matchedStocks.find(s => s.name.toLowerCase() === searchName.toLowerCase());
           const targetStock = exactMatch || (matchedStocks.length === 1 ? matchedStocks[0] : null);
+
+          if (targetStock && stockData.action === 'DELETE') {
+            const { error: deleteError } = await supabaseAdmin
+              .from('stocks')
+              .delete()
+              .eq('id', targetStock.id);
+
+            if (deleteError) {
+              await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการลบวัสดุออกจากคลัง');
+            } else {
+              await sendLineReply(replyToken, `🗑️ ลบวัสดุ "${targetStock.name}" ออกจากคลังเรียบร้อยแล้วครับ!`);
+            }
+            continue;
+          }
+
+          if (targetStock && stockData.category) {
+            const { error: updateError } = await supabaseAdmin
+              .from('stocks')
+              .update({ category: stockData.category, updated_at: new Date().toISOString() })
+              .eq('id', targetStock.id);
+
+            if (updateError) {
+              await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการย้ายหมวดหมู่ของวัสดุ');
+            } else {
+              const catLabel = stockData.category === 'Laboratory' ? '🔬 Laboratory' : '💼 อุปกรณ์สำนักงาน';
+              await sendLineReply(replyToken, `✅ ย้ายหมวดหมู่ของวัสดุ "${targetStock.name}" ไปที่ "${catLabel}" เรียบร้อยแล้วครับ!`);
+            }
+            continue;
+          }
 
           if (targetStock && stockData.quantity !== null) {
             let newQty = targetStock.quantity;
@@ -1191,7 +1402,7 @@ export async function POST(request: Request) {
               newQty = Math.max(0, targetStock.quantity - stockData.quantity);
             } else if (stockData.action === 'ADD') {
               newQty = targetStock.quantity + stockData.quantity;
-            } else if (stockData.action === 'SET') {
+            } else if (stockData.action === 'SET' || stockData.action === 'CHECK') {
               newQty = stockData.quantity;
             }
 

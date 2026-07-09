@@ -51,7 +51,7 @@ export function calculateDueDate(poDateStr: string | null, creditTerm: number | 
 /**
  * Helper to select one of the available Gemini API keys from env variables.
  */
-function getGeminiApiKey(): string | undefined {
+export function getGeminiApiKey(): string | undefined {
   const keys = [
     process.env.GEMINI_API_KEY_1,
     process.env.GEMINI_API_KEY_2,
@@ -242,7 +242,7 @@ Format output strictly as JSON:
 /**
  * Extracts details specifically for stock operations.
  */
-async function parseStockMessageWithAI(
+export async function parseStockMessageWithAI(
   messageText: string,
   apiKey: string
 ): Promise<{

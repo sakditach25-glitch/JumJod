@@ -84,6 +84,19 @@ export default function StockPage() {
     adjustQuantityMutation.mutate({ id: stock.id, newQuantity: newQty });
   };
 
+  const handleToggleCategory = (stock: StockItem) => {
+    const newCategory = stock.category === 'Laboratory' ? 'อุปกรณ์สำนักงาน' : 'Laboratory';
+    supabase
+      .from('stocks')
+      .update({ category: newCategory, updated_at: new Date().toISOString() })
+      .eq('id', stock.id)
+      .then(({ error }) => {
+        if (!error) {
+          queryClient.invalidateQueries({ queryKey: ['stocks'] });
+        }
+      });
+  };
+
   // Filter items
   const filteredStocks = stocks.filter((stock) => {
     const matchesSearch = stock.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -247,13 +260,22 @@ export default function StockPage() {
                 {/* Top Header */}
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${
-                      stock.category === 'Laboratory' 
-                        ? 'text-emerald-700 dark:text-emerald-450 bg-emerald-500/10 border border-emerald-500/20' 
-                        : 'text-violet-750 dark:text-violet-400 bg-violet-500/10 border border-violet-500/20'
-                    }`}>
-                      {stock.category === 'Laboratory' ? '🔬 Laboratory' : '💼 อุปกรณ์สำนักงาน'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${
+                        stock.category === 'Laboratory' 
+                          ? 'text-emerald-700 dark:text-emerald-450 bg-emerald-500/10 border border-emerald-500/20' 
+                          : 'text-violet-750 dark:text-violet-400 bg-violet-500/10 border border-violet-500/20'
+                      }`}>
+                        {stock.category === 'Laboratory' ? '🔬 Laboratory' : '💼 อุปกรณ์สำนักงาน'}
+                      </span>
+                      <button
+                        onClick={() => handleToggleCategory(stock)}
+                        className="px-2 py-0.5 border border-slate-200 dark:border-slate-800 rounded-lg text-[9px] font-bold text-slate-500 dark:text-slate-400 hover:text-violet-650 hover:bg-slate-100 dark:hover:bg-slate-850 cursor-pointer transition-colors"
+                        title="ย้ายหมวดหมู่"
+                      >
+                        🔁 {stock.category === 'Laboratory' ? 'ย้ายไป สำนักงาน' : 'ย้ายไป Lab'}
+                      </button>
+                    </div>
                     <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-mono text-[9px] font-extrabold text-slate-400 dark:text-slate-550 select-all shrink-0">
                       #stk-{stock.id.substring(stock.id.length - 3)}
                     </span>
