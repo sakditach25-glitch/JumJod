@@ -1118,18 +1118,21 @@ export async function POST(request: Request) {
       // 2.1 Mode switching and context checks
       const cleanMessageText = messageText.trim().toLowerCase();
       if (cleanMessageText === 'บันทึกช่วยจำ') {
+        memoryStateCache.delete(lineUserId);
         await setUserModeState(profile, lineUserId, 'reminder', supabaseAdmin);
         await sendLineReply(replyToken, '📝 เข้าสู่โหมด **"บันทึกช่วยจำพร้อมแจ้งเตือน"** เรียบร้อยแล้วครับ! คุณสามารถพิมพ์จดรายการจัดซื้อหรือการแจ้งเตือนต่าง ๆ ได้ทันทีจ้า');
         continue;
       }
       
       if (cleanMessageText === 'สต็อก' || cleanMessageText === 'สต๊อก') {
+        memoryStateCache.delete(lineUserId);
         await setUserModeState(profile, lineUserId, 'stock', supabaseAdmin);
         await sendLineReply(replyToken, '📦 เข้าสู่โหมด **"สต็อกวัสดุคงเหลือ"** เรียบร้อยแล้วครับ! คุณสามารถพิมพ์ทำรายการเบิก/หัก/เติม/ปรับยอดวัสดุต่าง ๆ ได้ทันทีจ้า');
         continue;
       }
 
       if (cleanMessageText === 'รีเซ็ตโหมด' || cleanMessageText === 'ออกโหมด') {
+        memoryStateCache.delete(lineUserId);
         await setUserModeState(profile, lineUserId, null, supabaseAdmin);
         await sendLineReply(replyToken, '🔄 รีเซ็ตโหมดการทำงานกลับสู่โหมดเริ่มต้นแล้วครับ');
         continue;
@@ -1145,6 +1148,7 @@ export async function POST(request: Request) {
         if (currentMode !== 'stock') {
           await setUserModeState(profile, lineUserId, 'stock', supabaseAdmin);
         }
+        memoryStateCache.delete(lineUserId);
 
         const { data: matchedStocks, error: searchError } = await supabaseAdmin
           .from('stocks')
