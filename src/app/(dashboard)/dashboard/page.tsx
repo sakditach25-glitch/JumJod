@@ -305,6 +305,19 @@ export default function DashboardPage() {
     filteredItems = filteredItems.filter(item => item.is_pr);
   }
 
+  // Sort items: earliest reminder_date first (most urgent).
+  // Items without a reminder_date will be placed at the bottom, sorted by created_at descending (newest first).
+  filteredItems.sort((a, b) => {
+    if (a.reminder_date && b.reminder_date) {
+      return new Date(a.reminder_date).getTime() - new Date(b.reminder_date).getTime();
+    }
+    if (a.reminder_date) return -1; // a has reminder, b doesn't -> a comes first
+    if (b.reminder_date) return 1;  // b has reminder, a doesn't -> b comes first
+    
+    // Fallback: both have no reminder, sort by created_at descending (newest first)
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
 
 
   const columns: { status: ItemStatus; title: string; subtitle: string; colorClass: string; borderClass: string }[] = [
