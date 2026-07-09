@@ -22,6 +22,8 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
   const [quantity, setQuantity] = useState(0);
   const [unit, setUnit] = useState('ชิ้น');
   const [category, setCategory] = useState<'อุปกรณ์สำนักงาน' | 'Laboratory'>('อุปกรณ์สำนักงาน');
+  const [minThreshold, setMinThreshold] = useState(0);
+  const [priority, setPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -35,12 +37,16 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
         setQuantity(stockToEdit.quantity);
         setUnit(stockToEdit.unit);
         setCategory(stockToEdit.category as any);
+        setMinThreshold(stockToEdit.min_threshold ?? 0);
+        setPriority(stockToEdit.priority || 'Medium');
       } else {
         setName('');
         setDescription('');
         setQuantity(0);
         setUnit('ชิ้น');
         setCategory('อุปกรณ์สำนักงาน');
+        setMinThreshold(0);
+        setPriority('Medium');
       }
       setError(null);
     }
@@ -58,6 +64,8 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
         quantity,
         unit: unit.trim(),
         category,
+        min_threshold: minThreshold,
+        priority,
         updated_at: new Date().toISOString(),
       };
 
@@ -83,7 +91,7 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
     },
     onError: (err: any) => {
       console.error('Error saving stock:', err);
-      setError(err?.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      setError(err?.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูลวัสดุ');
       setSubmitting(false);
     }
   });
@@ -91,11 +99,15 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setError('กรุณากรอกชื่อสินค้า');
+      setError('กรุณากรอกชื่อวัสดุ');
       return;
     }
     if (quantity < 0) {
-      setError('จำนวนสินค้าห้ามต่ำกว่า 0');
+      setError('จำนวนวัสดุห้ามต่ำกว่า 0');
+      return;
+    }
+    if (minThreshold < 0) {
+      setError('เกณฑ์เตือนสั่งเพิ่มห้ามต่ำกว่า 0');
       return;
     }
     mutation.mutate();
@@ -116,7 +128,7 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
         {/* Header */}
         <div className="p-6 border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
           <h2 className="text-xl font-bold bg-gradient-to-r from-violet-650 to-indigo-650 dark:from-violet-400 dark:to-indigo-200 bg-clip-text text-transparent">
-            {stockToEdit ? 'แก้ไขสินค้าในคลัง' : 'เพิ่มสินค้าใหม่'}
+            {stockToEdit ? 'แก้ไขวัสดุในคลัง' : 'เพิ่มวัสดุใหม่'}
           </h2>
           <button
             onClick={onClose}
@@ -138,7 +150,7 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
           {/* Name */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-450 mb-1.5 uppercase tracking-wider">
-              ชื่อสินค้า (Item Name) *
+              ชื่อวัสดุ (Material Name) *
             </label>
             <input
               type="text"
@@ -158,7 +170,7 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value as any)}
-              className="w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-950/65 border border-slate-200 dark:border-slate-850 focus:border-violet-500 dark:focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all text-sm text-slate-850 dark:text-slate-200"
+              className="w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-950/65 border border-slate-200 dark:border-slate-850 focus:border-violet-500 dark:focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all text-sm text-slate-855 dark:text-slate-200"
             >
               <option value="อุปกรณ์สำนักงาน">💼 อุปกรณ์สำนักงาน (Office Supplies)</option>
               <option value="Laboratory">🔬 งาน Laboratory (Lab Supplies)</option>
@@ -192,6 +204,37 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
                 className="w-full px-4 py-2.5 rounded-xl bg-slate-55/40 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-850 focus:border-violet-500 dark:focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all text-sm text-slate-800 dark:text-slate-200"
                 required
               />
+            </div>
+          </div>
+
+          {/* Threshold & Priority */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-450 mb-1.5 uppercase tracking-wider" title="ควรสั่งซื้อเพิ่มเมื่อจำนวนลดลงมาเท่ากับหรือต่ำกว่าระดับนี้">
+                เกณฑ์แจ้งเตือนควรสั่งเพิ่ม *
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={minThreshold}
+                onChange={(e) => setMinThreshold(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-full px-4 py-2.5 rounded-xl bg-slate-55/40 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-850 focus:border-violet-500 dark:focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all text-sm text-slate-800 dark:text-slate-200"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-450 mb-1.5 uppercase tracking-wider">
+                ลำดับความสำคัญ (Priority)
+              </label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as any)}
+                className="w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-950/65 border border-slate-200 dark:border-slate-850 focus:border-violet-500 dark:focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all text-sm text-slate-855 dark:text-slate-200"
+              >
+                <option value="High">🔴 ด่วนมาก (High)</option>
+                <option value="Medium">🟡 ปานกลาง (Medium)</option>
+                <option value="Low">🟢 ทั่วไป (Low)</option>
+              </select>
             </div>
           </div>
 
@@ -231,7 +274,7 @@ export default function StockModal({ isOpen, onClose, userId, stockToEdit }: Sto
                 <span>กำลังบันทึก...</span>
               </>
             ) : (
-              <span>{stockToEdit ? 'บันทึกการแก้ไข' : 'สร้างรายการ'}</span>
+              <span>{stockToEdit ? 'บันทึกการแก้ไข' : 'สร้างรายการวัสดุ'}</span>
             )}
           </button>
         </div>

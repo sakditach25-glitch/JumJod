@@ -28,6 +28,8 @@ export interface GeminiParsedOutput {
     quantity: number | null;
     unit: string | null;
     category?: string | null;
+    priority?: 'High' | 'Medium' | 'Low' | null;
+    min_threshold?: number | null;
   };
   message?: string;
 }
@@ -85,7 +87,7 @@ Existing items context (recent active procurement items):
 ${JSON.stringify(existingItems.map(item => ({ id: item.id, title: item.title })))}
 
 Classify the user's intent into one of the following:
-- STOCK: User wants to manage stock, inventory, laboratory, or office supplies (e.g. "เบิกแอลกอฮอล์ 2 ขวด", "เพิ่มกระดาษ 10 รีม", "เช็กสต็อกกระดาษ A4", "แอดแอลกอฮอล์ 95%", "สต็อก", "ตัดสต็อก", "ลบสินค้าแอลกอฮอล์ออกจากคลัง", "แอลกอฮอล์").
+- STOCK: User wants to manage stock, inventory, laboratory, or office supplies (e.g. "เบิกแอลกอฮอล์ 2 ขวด", "เพิ่มกระดาษ 10 รีม", "เช็กสต็อกกระดาษ A4", "แอดแอลกอฮอล์ 95%", "สต็อก", "ตัดสต็อก", "ลบวัสดุแอลกอฮอล์ออกจากคลัง", "แอลกอฮอล์").
 - CREATE: User wants to add/remember a new procurement item, task, or purchase reminder (e.g. "บันทึก เคลียร์ไฟล์งบประมาณ", "สั่งซื้อคอม", "แจ้งเตือนสเก็ตงานพรุ่งนี้").
 - SEARCH: User wants to search or look up items (e.g. "ค้นหาระเบียบ", "หา กระดาษ").
 - UPDATE: User wants to edit/change/update details of an existing item (e.g. "แก้ไข ซื้อหมึก เพิ่มเครดิตเป็น 60 วัน", "แก้รายละเอียดคอม").
@@ -249,6 +251,8 @@ async function parseStockMessageWithAI(
   quantity: number | null;
   unit: string | null;
   category?: string | null;
+  priority?: 'High' | 'Medium' | 'Low' | null;
+  min_threshold?: number | null;
 }> {
   const modelName = 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -261,11 +265,13 @@ Analyze this user message related to stock: "${messageText}"
 
 Extract the following fields and format strictly as JSON:
 {
-  "action": "ADD" (for adding stock/deposit/new item), "SUBTRACT" (for withdrawing/reducing/using stock), "SET" (for setting specific quantity), "DELETE" (for deleting item completely from stock table), or "CHECK" (for checking stock balance),
-  "name": "Clean, specific item name (e.g. 'แอลกอฮอล์ 70%', 'กระดาษ A4'). Strip action verbs like 'เบิก', 'เพิ่ม', 'แอด', 'ลบ', 'เช็ก', 'เช็ค', 'ตรวจสอบ' from the name.",
+  "action": "ADD" (for adding stock/deposit/new material), "SUBTRACT" (for withdrawing/reducing/using material), "SET" (for setting specific quantity), "DELETE" (for deleting material completely from stock table), or "CHECK" (for checking stock balance),
+  "name": "Clean, specific material name (e.g. 'แอลกอฮอล์ 70%', 'กระดาษ A4'). Strip action verbs like 'เบิก', 'เพิ่ม', 'แอด', 'ลด', 'ลบ', 'เช็ก', 'เช็ค', 'ตรวจสอบ' from the name.",
   "quantity": number or null (e.g. for 'เบิก 5 ขวด' quantity is 5, for 'เช็กแอลกอฮอล์' quantity is null),
   "unit": "string or null (e.g. 'ขวด', 'รีม', 'กล่อง', 'ชิ้น', 'หลอด', 'แกลลอน')",
-  "category": "string or null (strictly classify as 'อุปกรณ์สำนักงาน' or 'Laboratory' based on context, e.g. chemical/lab tools go to 'Laboratory', paper/pens go to 'อุปกรณ์สำนักงาน')"
+  "category": "string or null (strictly classify as 'อุปกรณ์สำนักงาน' or 'Laboratory' based on context, e.g. chemical/lab tools go to 'Laboratory', paper/pens go to 'อุปกรณ์สำนักงาน')",
+  "priority": "strictly 'High', 'Medium', or 'Low' if user mentions importance/urgency (e.g. 'ด่วน', 'สำคัญมาก' -> 'High', otherwise null)",
+  "min_threshold": number or null (if user mentions a minimum limit for alerts, e.g. 'เตือนเมื่อเหลือน้อยกว่า 5' -> 5, otherwise null)"
 }`
       }]
     }],
@@ -563,14 +569,14 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
   const text = messageText.toLowerCase().trim();
 
   // 0. STOCK intent in fallback
-  const isStockAction = /(?:สต็อก|สต๊อก|คลัง|จำนวน|ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|เบิก|หักยอด|ตัดยอด|แอดสินค้า|เพิ่มสต็อก|แล็บ|lab)/i.test(text);
+  const isStockAction = /(?:สต็อก|สต๊อก|คลัง|จำนวน|ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|เบิก|หักยอด|ตัดยอด|แอดวัสดุ|เพิ่มสต็อก|แล็บ|lab|วัสดุ)/i.test(text);
   if (isStockAction) {
     let action: 'ADD' | 'SUBTRACT' | 'SET' | 'DELETE' | 'CHECK' = 'CHECK';
     if (text.startsWith('เบิก') || text.startsWith('หัก') || text.startsWith('ลด') || text.includes('ตัดยอด') || text.includes('เบิกออก')) {
       action = 'SUBTRACT';
     } else if (text.startsWith('เพิ่ม') || text.startsWith('แอด') || text.includes('เติม') || text.includes('เพิ่มสต็อก')) {
       action = 'ADD';
-    } else if (text.startsWith('ลบ') || text.includes('ลบสินค้า') || text.includes('เอาออก')) {
+    } else if (text.startsWith('ลบ') || text.includes('ลบวัสดุ') || text.includes('เอาออก')) {
       action = 'DELETE';
     } else if (text.startsWith('ตั้ง') || text.startsWith('ใส่ยอด') || text.includes('เท่ากับ')) {
       action = 'SET';
@@ -584,11 +590,23 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
     const unitMatch = text.match(/(ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|อัน|ม้วน|ถุง|ใบ)/);
     const unit = unitMatch ? unitMatch[1] : 'ชิ้น';
 
+    // Extract priority in fallback
+    let priority: 'High' | 'Medium' | 'Low' = 'Medium';
+    if (text.includes('ด่วน') || text.includes('สำคัญมาก')) {
+      priority = 'High';
+    } else if (text.includes('ทั่วไป') || text.includes('ไม่ด่วน')) {
+      priority = 'Low';
+    }
+
+    // Extract min threshold in fallback
+    const thresholdMatch = text.match(/(?:เตือนเมื่อเหลือ|เกณฑ์|ขั้นต่ำ)\s*(\d+)/i);
+    const min_threshold = thresholdMatch ? parseInt(thresholdMatch[1]) : 0;
+
     // Extract name by removing action, quantity, units
     let name = messageText
       .replace(/^(?:เบิก|หัก|ลด|ตัดยอด|เพิ่ม|แอด|เติม|ลบ|ตั้ง|เช็ก|ดู|สต็อก|สต๊อก|เช็ค)\s*/i, '')
       .replace(/\b\d+\b/g, '')
-      .replace(/(ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|อัน|ม้วน|ถุง|ใบ|วัน|เครดิต)/g, '')
+      .replace(/(ชิ้น|กล่อง|ขวด|หลอด|แกลลอน|รีม|อัน|ม้วน|ถุง|ใบ|วัน|เครดิต|ด่วน|ทั่วไป|ไม่ด่วน|สำคัญมาก)/g, '')
       .trim();
     name = name.replace(/^[:\-ー\s\.]+/, '').trim();
 
@@ -599,7 +617,9 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
         name: name || null,
         quantity,
         unit,
-        category: text.includes('lab') || text.includes('แล็บ') || text.includes('สารเคมี') ? 'Laboratory' : 'อุปกรณ์สำนักงาน'
+        category: text.includes('lab') || text.includes('แล็บ') || text.includes('สารเคมี') ? 'Laboratory' : 'อุปกรณ์สำนักงาน',
+        priority,
+        min_threshold
       }
     };
   }

@@ -130,6 +130,8 @@ export interface StockItem {
   quantity: number;
   unit: string;
   category: string;
+  min_threshold: number;
+  priority: 'High' | 'Medium' | 'Low';
   created_at: string;
   updated_at: string;
 }

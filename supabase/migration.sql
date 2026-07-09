@@ -60,4 +60,13 @@ CREATE POLICY "Users can delete their own stocks"
   ON public.stocks FOR DELETE 
   USING (auth.uid() = user_id);
 
+-- ADD min_threshold and priority columns to public.stocks
+ALTER TABLE public.stocks ADD COLUMN IF NOT EXISTS min_threshold integer DEFAULT 0 NOT NULL;
+ALTER TABLE public.stocks ADD COLUMN IF NOT EXISTS priority text DEFAULT 'Medium' NOT NULL;
+
+-- Add check constraint for priority column
+ALTER TABLE public.stocks DROP CONSTRAINT IF EXISTS stocks_priority_check;
+ALTER TABLE public.stocks ADD CONSTRAINT stocks_priority_check CHECK (priority IN ('High', 'Medium', 'Low'));
+
+
 

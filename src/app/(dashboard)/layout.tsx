@@ -29,7 +29,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       icon: ClipboardList,
     },
     {
-      name: 'สต็อกสินค้า',
+      name: 'สต็อกวัสดุ',
       href: '/stock',
       icon: Package,
     },

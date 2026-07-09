@@ -279,6 +279,10 @@ export function createStockListFlex(stocks: any[], op: string, qty: number | nul
   
   const contents = stocks.slice(0, 8).map(stock => {
     const postbackData = `action=stock_execute&id=${stock.id}&op=${op}&qty=${qty || ''}`;
+    const isAlert = stock.quantity <= (stock.min_threshold ?? 0);
+    const displayName = isAlert ? `⚠️ ${stock.name} (ใกล้หมด)` : stock.name;
+    const nameColor = isAlert ? '#ef4444' : '#1e293b';
+    const priorityLabel = stock.priority === 'High' ? '🔴 ด่วนมาก' : stock.priority === 'Medium' ? '🟡 ปานกลาง' : '🟢 ทั่วไป';
     
     return {
       type: 'box',
@@ -292,10 +296,10 @@ export function createStockListFlex(stocks: any[], op: string, qty: number | nul
           contents: [
             {
               type: 'text',
-              text: stock.name,
+              text: displayName,
               weight: 'bold',
               size: 'sm',
-              color: '#1e293b',
+              color: nameColor,
               flex: 7,
               wrap: true
             },
@@ -304,7 +308,7 @@ export function createStockListFlex(stocks: any[], op: string, qty: number | nul
               text: `${stock.quantity} ${stock.unit}`,
               weight: 'bold',
               size: 'sm',
-              color: stock.quantity > 0 ? '#10b981' : '#ef4444',
+              color: isAlert ? '#ef4444' : '#10b981',
               align: 'end',
               flex: 3
             }
@@ -312,7 +316,7 @@ export function createStockListFlex(stocks: any[], op: string, qty: number | nul
         },
         {
           type: 'text',
-          text: `หมวดหมู่: ${stock.category}`,
+          text: `หมวดหมู่: ${stock.category} • ความสำคัญ: ${priorityLabel}`,
           size: 'xs',
           color: '#94a3b8'
         },
@@ -350,7 +354,7 @@ export function createStockListFlex(stocks: any[], op: string, qty: number | nul
         height: 'sm',
         action: {
           type: 'postback',
-          label: `➕ เพิ่มเป็นสินค้าใหม่: "${searchName}"`,
+          label: `➕ เพิ่มเป็นวัสดุใหม่: "${searchName}"`,
           data: createNewPostback
         }
       }
@@ -367,7 +371,7 @@ export function createStockListFlex(stocks: any[], op: string, qty: number | nul
       contents: [
         {
           type: 'text',
-          text: `📦 ค้นพบสินค้าสต็อกสำหรับ: "${searchName}"`,
+          text: `📦 ค้นพบวัสดุในสต็อกสำหรับ: "${searchName}"`,
           weight: 'bold',
           size: 'sm',
           color: '#475569'
@@ -688,7 +692,7 @@ export async function POST(request: Request) {
               .single();
 
             if (fetchError || !stockItem) {
-              await sendLineReply(replyToken, '❌ ไม่พบสินค้าชิ้นนี้ในสต็อกแล้ว');
+              await sendLineReply(replyToken, '❌ ไม่พบวัสดุชิ้นนี้ในสต็อกแล้ว');
               continue;
             }
 
@@ -711,7 +715,7 @@ export async function POST(request: Request) {
                 await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
               } else {
                 const opText = op === 'SUBTRACT' ? 'เบิกออก' : op === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
-                await sendLineReply(replyToken, `✅ ทำการ${opText}สินค้า "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦`);
+                await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦`);
               }
             } else {
               memoryStateCache.set(lineUserId, {
@@ -722,7 +726,7 @@ export async function POST(request: Request) {
                 stockUnit: stockItem.unit
               });
               const opText = op === 'SUBTRACT' ? 'เบิก' : op === 'ADD' ? 'เติม' : 'ปรับยอด';
-              await sendLineReply(replyToken, `📦 ต้องการ${opText}สินค้า "${stockItem.name}" จำนวนเท่าไหร่ดีครับ?\n\n(กรุณาพิมพ์จำนวนเป็นตัวเลข เช่น "5" หรือ "10")`);
+              await sendLineReply(replyToken, `📦 ต้องการ${opText}วัสดุ "${stockItem.name}" จำนวนเท่าไหร่ดีครับ?\n\n(กรุณาพิมพ์จำนวนเป็นตัวเลข เช่น "5" หรือ "10")`);
             }
           } else if (action === 'stock_create_prompt') {
             const name = params.get('name')!;
@@ -755,16 +759,16 @@ export async function POST(request: Request) {
                 .single();
 
               if (createError || !newItem) {
-                await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างสินค้าใหม่');
+                await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างวัสดุใหม่');
               } else {
-                await sendLineReply(replyToken, `✅ เพิ่มสินค้าใหม่ "${newItem.name}" จำนวน ${newItem.quantity} ${newItem.unit} เข้าคลังสำเร็จแล้วครับ! 📦`);
+                await sendLineReply(replyToken, `✅ เพิ่มวัสดุใหม่ "${newItem.name}" จำนวน ${newItem.quantity} ${newItem.unit} เข้าคลังสำเร็จแล้วครับ! 📦`);
               }
             } else {
               memoryStateCache.set(lineUserId, {
                 action: 'stock_pending_create_qty',
                 stockName: name
               });
-              await sendLineReply(replyToken, `📦 ต้องการสร้างสินค้าใหม่ "${name}"\nมีจำนวนเริ่มต้นเท่าไหร่ดีครับ?\n\n(กรุณาพิมพ์ตัวเลข เช่น "10")`);
+              await sendLineReply(replyToken, `📦 ต้องการสร้างวัสดุใหม่ "${name}"\nมีจำนวนเริ่มต้นเท่าไหร่ดีครับ?\n\n(กรุณาพิมพ์ตัวเลข เช่น "10")`);
             }
           }
         } catch (error) {
@@ -925,7 +929,7 @@ export async function POST(request: Request) {
             .single();
 
           if (!stockItem) {
-            await sendLineReply(replyToken, '❌ ไม่พบสินค้าชิ้นนี้ในสต็อกแล้ว');
+            await sendLineReply(replyToken, '❌ ไม่พบวัสดุชิ้นนี้ในสต็อกแล้ว');
             memoryStateCache.delete(lineUserId);
             continue;
           }
@@ -950,7 +954,7 @@ export async function POST(request: Request) {
             await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
           } else {
             const opText = userState.operation === 'SUBTRACT' ? 'เบิกออก' : userState.operation === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
-            await sendLineReply(replyToken, `✅ ทำการ${opText}สินค้า "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦`);
+            await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦`);
           }
         } else {
           await sendLineReply(replyToken, '❌ กรุณาระบุจำนวนเป็นตัวเลขอีกครั้งครับ เช่น "5" หรือ "10"');
@@ -980,9 +984,9 @@ export async function POST(request: Request) {
           memoryStateCache.delete(lineUserId);
 
           if (createError || !newItem) {
-            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างสินค้าใหม่');
+            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างวัสดุใหม่');
           } else {
-            await sendLineReply(replyToken, `✅ เพิ่มสินค้าใหม่ "${newItem.name}" จำนวน ${newItem.quantity} ${newItem.unit} เข้าคลังสำเร็จแล้วครับ! 📦`);
+            await sendLineReply(replyToken, `✅ เพิ่มวัสดุใหม่ "${newItem.name}" จำนวน ${newItem.quantity} ${newItem.unit} เข้าคลังสำเร็จแล้วครับ! 📦`);
           }
         } else {
           await sendLineReply(replyToken, '❌ กรุณาระบุจำนวนเริ่มต้นเป็นตัวเลขอีกครั้งครับ เช่น "10"');
@@ -1079,7 +1083,7 @@ export async function POST(request: Request) {
             .ilike('name', `%${searchName}%`);
 
           if (searchError) {
-            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการค้นหาคลังสินค้า');
+            await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการค้นหาคลังวัสดุ');
             continue;
           }
 
@@ -1095,15 +1099,17 @@ export async function POST(request: Request) {
                   name: searchName,
                   quantity: stockData.quantity,
                   unit: stockData.unit || 'ชิ้น',
-                  category: category
+                  category: category,
+                  priority: stockData.priority || 'Medium',
+                  min_threshold: stockData.min_threshold || 0
                 }])
                 .select('*')
                 .single();
 
               if (createError || !newItem) {
-                await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างสินค้าใหม่');
+                await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการสร้างวัสดุใหม่');
               } else {
-                await sendLineReply(replyToken, `✅ ไม่พบสินค้าในคลัง จึงทำการสร้างสินค้าใหม่:\n📦 "${newItem.name}" จำนวนเริ่มต้น ${newItem.quantity} ${newItem.unit} สำเร็จแล้วครับ!`);
+                await sendLineReply(replyToken, `✅ ไม่พบวัสดุในคลัง จึงทำการสร้างวัสดุใหม่:\n📦 "${newItem.name}" จำนวนเริ่มต้น ${newItem.quantity} ${newItem.unit} สำเร็จแล้วครับ!`);
               }
             } else {
               const createNewPostback = `action=stock_create_prompt&name=${searchName}&qty=${stockData.quantity || ''}`;
@@ -1117,14 +1123,14 @@ export async function POST(request: Request) {
                   contents: [
                     {
                       type: 'text',
-                      text: `🔎 ไม่พบสินค้าชื่อ "${searchName}" ในคลัง`,
+                      text: `🔎 ไม่พบวัสดุชื่อ "${searchName}" ในคลัง`,
                       weight: 'bold',
                       size: 'md',
                       color: '#1e293b'
                     },
                     {
                       type: 'text',
-                      text: 'คุณต้องการบันทึกแอดสินค้าชิ้นนี้เข้าไปในระบบสต็อกใหม่เลยไหมครับ?',
+                      text: 'คุณต้องการบันทึกแอดวัสดุชิ้นนี้เข้าไปในระบบสต็อกใหม่เลยไหมครับ?',
                       size: 'xs',
                       color: '#64748b',
                       wrap: true
@@ -1136,7 +1142,7 @@ export async function POST(request: Request) {
                       height: 'sm',
                       action: {
                         type: 'postback',
-                        label: '➕ สร้างสินค้าใหม่ในคลัง',
+                        label: '➕ สร้างวัสดุใหม่ในคลัง',
                         data: createNewPostback
                       }
                     }
@@ -1146,7 +1152,7 @@ export async function POST(request: Request) {
 
               await sendLineReply(replyToken, {
                 type: 'flex',
-                altText: `⚠️ ไม่พบสินค้า "${searchName}" ในคลัง`,
+                altText: `⚠️ ไม่พบวัสดุ "${searchName}" ในคลัง`,
                 contents: notFoundFlex
               });
             }
@@ -1176,7 +1182,7 @@ export async function POST(request: Request) {
               await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
             } else {
               const opText = stockData.action === 'SUBTRACT' ? 'เบิกออก' : stockData.action === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
-              await sendLineReply(replyToken, `✅ ทำการ${opText}สินค้า "${targetStock.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${targetStock.quantity} ${targetStock.unit}\nทำรายการ: ${stockData.quantity} ${targetStock.unit}\nยอดคงเหลือใหม่: ${newQty} ${targetStock.unit} 📦`);
+              await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${targetStock.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${targetStock.quantity} ${targetStock.unit}\nทำรายการ: ${stockData.quantity} ${targetStock.unit}\nยอดคงเหลือใหม่: ${newQty} ${targetStock.unit} 📦`);
             }
             continue;
           }
