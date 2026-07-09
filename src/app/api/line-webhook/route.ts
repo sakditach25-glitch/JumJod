@@ -864,6 +864,13 @@ export async function POST(request: Request) {
               continue;
             }
 
+            if (op === 'CHECK') {
+              const isAlert = stockItem.quantity <= (stockItem.min_threshold ?? 0);
+              const alertMsg = isAlert ? `\n⚠️ ระดับวัสดุต่ำกว่าเกณฑ์ขั้นต่ำแล้ว! (เกณฑ์ขั้นต่ำ: ${stockItem.min_threshold} ${stockItem.unit})` : '';
+              await sendLineReply(replyToken, `📦 วัสดุ "${stockItem.name}"\nยอดคงเหลือปัจจุบัน: ${stockItem.quantity} ${stockItem.unit}${alertMsg}`);
+              continue;
+            }
+
             if (qty !== null && !isNaN(qty)) {
               let newQty = stockItem.quantity;
               if (op === 'SUBTRACT') {
@@ -1039,22 +1046,17 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // Check current active mode
-      const activeMode = await getUserModeState(profile, lineUserId, supabaseAdmin);
-      
-      // If no mode is active, block and prompt to choose mode
-      if (!activeMode) {
-        const modeFlex = createModeSelectionFlex();
-        await sendLineReply(replyToken, {
-          type: 'flex',
-          altText: '🤖 กรุณาเลือกโหมดการทำงานก่อนพิมพ์สั่งงานครับ',
-          contents: modeFlex
-        });
-        continue;
-      }
+      // Check if message is a generic request to view the entire stock/inventory
+      const isCheckAllStocks = /^(ดู|เช็ก|เช็ค|รายการ|แสดง)?\s*(สต็อก|สต๊อก|วัสดุ|ของ|สินค้า|ยอด|สต็อกของ|สต๊อกของ|ยอดของ|สินค้าของ)(ทั้งหมด|ของ)?$/i.test(cleanMessageText) ||
+        ['ดูสต็อก', 'ดูสต๊อก', 'เช็กสต็อก', 'เช็คสต็อก', 'เช็กสต๊อก', 'เช็คสต๊อก', 'วัสดุ', 'ดูวัสดุ', 'เช็กวัสดุ', 'เช็ควัสดุ', 'เช็คของ', 'เช็กของ', 'ดูของ', 'เช็คสต็อกของ', 'เช็กสต็อกของ', 'เช็คยอด', 'เช็กยอด', 'ยอด'].includes(cleanMessageText);
 
-      // 3. Stateful edit mode check & "รายการ" command interception
-      if (['สต็อก', 'ดูสต็อก', 'เช็กสต็อก', 'วัสดุ', 'ดูวัสดุ', 'เช็คสต็อก', 'เช็ควัสดุ'].includes(messageText.trim().toLowerCase())) {
+      if (isCheckAllStocks) {
+        // Automatically switch to stock mode if not already
+        const currentMode = await getUserModeState(profile, lineUserId, supabaseAdmin);
+        if (currentMode !== 'stock') {
+          await setUserModeState(profile, lineUserId, 'stock', supabaseAdmin);
+        }
+
         const { data: matchedStocks, error: searchError } = await supabaseAdmin
           .from('stocks')
           .select('*')
@@ -1072,6 +1074,20 @@ export async function POST(request: Request) {
           type: 'flex',
           altText: '📦 รายการสต็อกวัสดุทั้งหมดของคุณ',
           contents: flexBubble
+        });
+        continue;
+      }
+
+      // Check current active mode
+      const activeMode = await getUserModeState(profile, lineUserId, supabaseAdmin);
+      
+      // If no mode is active, block and prompt to choose mode
+      if (!activeMode) {
+        const modeFlex = createModeSelectionFlex();
+        await sendLineReply(replyToken, {
+          type: 'flex',
+          altText: '🤖 กรุณาเลือกโหมดการทำงานก่อนพิมพ์สั่งงานครับ',
+          contents: modeFlex
         });
         continue;
       }
