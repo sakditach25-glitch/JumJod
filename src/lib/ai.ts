@@ -58,57 +58,36 @@ function getGeminiApiKey(): string | undefined {
 }
 
 /**
- * Helper to call Gemini API with a specific model and optional thinking configuration.
+ * Classifies user intent using a specialized, focused Gemini prompt.
  */
-async function callGeminiWithModel(
-  modelName: string,
-  apiKey: string,
+async function classifyIntentWithAI(
   messageText: string,
   existingItems: any[],
-  thinkingConfig?: { thinkingBudget?: number; thinkingLevel?: string }
-): Promise<GeminiParsedOutput | null> {
+  apiKey: string
+): Promise<'CREATE' | 'SEARCH' | 'UPDATE' | 'DELETE' | 'COMPLETE' | 'UNKNOWN'> {
+  const modelName = 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-  
-  const body: any = {
+
+  const body = {
     contents: [{
       parts: [{
-        text: `You are an AI data parser for JodJum (จำจด) - a procurement planner system.
-Today is ${new Date().toISOString().substring(0, 10)}.
+        text: `You are an intent classifier for JodJum (จำจด) - a procurement planner system.
 Analyze this message from the user: "${messageText}"
 
-Here is the list of active/recent items for this user:
-${JSON.stringify(existingItems.map(item => ({ id: item.id, title: item.title, description: item.description, status: item.status, credit_term: item.credit_term })))}
+Existing items context (recent active items):
+${JSON.stringify(existingItems.map(item => ({ id: item.id, title: item.title })))}
 
-Determine the user's intent:
-1. CREATE: User wants to add/remember a new procurement item.
-2. SEARCH: User wants to search or look up items (e.g. "ค้นหาระเบียบ", "หา กระดาษ", "มีรายการจัดซื้อค้างกี่อัน").
-3. UPDATE: User wants to edit/change/update details of an existing item (e.g. "แก้ไข รายการซื้อหมึกพิมพ์ เพิ่มเครดิตเป็น 60 วัน", "แก้รายละเอียดคอมเป็นสเปก i7").
-4. DELETE: User wants to delete or remove an item (e.g. "ลบรายการกระดาษ", "ลบเซิร์ฟเวอร์").
-5. COMPLETE: User wants to mark an item as finished/done/completed/successful (e.g. "ซื้อกระดาษสำเร็จแล้ว", "เสร็จแล้วรายการซื้อคอม", "ออก ITEM รายการเซิร์ฟเวอร์แล้ว").
-6. UNKNOWN: Conversational reply, hello, or command they don't understand.
+Classify the user's intent into one of the following:
+- CREATE: User wants to add/remember a new procurement item, task, reminder, or general note (e.g. "บันทึก เคลียร์ไฟล์งบประมาณ", "สั่งซื้อคอม", "แจ้งเตือนสเก็ตงานพรุ่งนี้").
+- SEARCH: User wants to search or look up items (e.g. "ค้นหาระเบียบ", "หา กระดาษ").
+- UPDATE: User wants to edit/change/update details of an existing item (e.g. "แก้ไข ซื้อหมึก เพิ่มเครดิตเป็น 60 วัน", "แก้รายละเอียดคอม").
+- DELETE: User wants to delete or remove an item (e.g. "ลบรายการกระดาษ", "ลบ b77", "ยกเลิกใบสั่งคอม").
+- COMPLETE: User wants to mark an item as finished/done/completed/successful (e.g. "สำเร็จ b78", "เสร็จแล้วรายการซื้อคอม").
+- UNKNOWN: Generic greetings, friendly replies, help requests, or comments that do not perform operations.
 
 Format the output strictly as a JSON object:
 {
-  "intent": "CREATE" | "SEARCH" | "UPDATE" | "DELETE" | "COMPLETE" | "UNKNOWN",
-  "search_query": "string (for SEARCH intent, extract query keyword, e.g. 'กระดาษ')",
-  "item_id": "string (for UPDATE, DELETE, or COMPLETE intents, the UUID of the closest matching item from the provided list, or null if no match)",
-  "create_data": {
-    "title": "string (clean item title, keep it short and descriptive)",
-    "description": "string (optional description details)",
-    "credit_term": 30 | 60 | 90 | null,
-    "po_date": "YYYY-MM-DD (default to today if credit term is matched)",
-    "budget_due_date": "YYYY-MM-DD (calculated as po_date + credit_term if matched, otherwise null)",
-    "reminder_date": "ISOString (optional reminder date)"
-  },
-  "update_data": {
-    "title": "string (optional new title)",
-    "description": "string (optional new description)",
-    "credit_term": 30 | 60 | 90 | null,
-    "po_date": "YYYY-MM-DD",
-    "budget_due_date": "YYYY-MM-DD",
-    "status": "Pending" | "Purchasing" | "Issuing Item"
-  },
-  "message": "string (for UNKNOWN intent, friendly help guide on how they can command the bot, e.g. how to add, search, edit, delete, or complete)"
+  "intent": "CREATE" | "SEARCH" | "UPDATE" | "DELETE" | "COMPLETE" | "UNKNOWN"
 }`
       }]
     }],
@@ -117,9 +96,54 @@ Format the output strictly as a JSON object:
     }
   };
 
-  if (thinkingConfig) {
-    body.generationConfig.thinkingConfig = thinkingConfig;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Classifier API error: status ${response.status}`);
   }
+
+  const data = await response.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const parsed = JSON.parse(rawText.trim());
+  return parsed.intent;
+}
+
+/**
+ * Extracts details specifically for creating a new item.
+ */
+async function parseCreateMessageWithAI(
+  messageText: string,
+  apiKey: string
+): Promise<ParsedProcurementData> {
+  const modelName = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+  const body = {
+    contents: [{
+      parts: [{
+        text: `You are a data extraction AI for JodJum (จำจด).
+Today is ${new Date().toISOString().substring(0, 10)}.
+Analyze this message from the user to extract details for creating a new item: "${messageText}"
+
+Extract the following fields and format strictly as JSON:
+{
+  "title": "Clean, short, and descriptive title of the procurement or task. CRITICAL: Never include keyword prefixes like 'แจ้งเตือน', 'ให้แจ้งเตือน', 'ไม่แจ้งเตือน', 'เตือน', 'ช่วยเตือน', 'ช่วยแจ้งเตือน', 'บันทึก', 'จด', 'เพิ่ม' in the title. Remove them and any leading colons/dashes. E.g. for 'บันทึก เคลียร์ไฟล์งบประมาณ ให้พี่เทียม' the title is 'เคลียร์ไฟล์งบประมาณ ให้พี่เทียม', for 'แจ้งเตือนซื้อหมึกพิมพ์' the title is 'ซื้อหมึกพิมพ์'",
+  "description": "Full description details (optional)",
+  "credit_term": 30 | 60 | 90 | null (if mentioned, e.g. เครดิต 30 วัน, otherwise null),
+  "po_date": "YYYY-MM-DD (default to today if credit term is matched, otherwise null)",
+  "budget_due_date": "YYYY-MM-DD (calculated as po_date + credit_term if matched, otherwise null)",
+  "reminder_date": "ISOString (optional reminder date, parse if message mentions when to remind, e.g. วันจันทร์หน้า, 30/07/26)"
+}`
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json"
+    }
+  };
 
   const response = await fetch(url, {
     method: 'POST',
@@ -128,25 +152,129 @@ Format the output strictly as a JSON object:
   });
 
   if (!response.ok) {
-    console.error(`Gemini API error for model ${modelName}: status ${response.status}`);
-    return null;
+    throw new Error(`Create parser API error: status ${response.status}`);
   }
 
   const data = await response.json();
   const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  if (!rawText) return null;
+  const parsed = JSON.parse(rawText.trim()) as ParsedProcurementData;
 
-  const parsed = JSON.parse(rawText.trim()) as GeminiParsedOutput;
-
-  // Ensure budget due date is calculated if credit term is set
-  if (parsed.intent === 'CREATE' && parsed.create_data) {
-    if (parsed.create_data.credit_term && !parsed.create_data.budget_due_date) {
-      parsed.create_data.po_date = parsed.create_data.po_date || new Date().toISOString().substring(0, 10);
-      parsed.create_data.budget_due_date = calculateDueDate(parsed.create_data.po_date, parsed.create_data.credit_term);
-    }
+  // Clean title prefix just in case Gemini missed it
+  if (parsed.title) {
+    parsed.title = parsed.title.replace(/^(?:ให้แจ้งเตือน|ไม่แจ้งเตือน|ช่วยแจ้งเตือน|แจ้งเตือน|ช่วยเตือน|เตือน|บันทึก|จด|เพิ่ม)\s*/i, '').trim();
+    parsed.title = parsed.title.replace(/^[:\-ー\s\.]+/, '').trim();
   }
 
   return parsed;
+}
+
+/**
+ * Extracts details specifically for updating an existing item.
+ */
+async function parseUpdateMessageWithAI(
+  messageText: string,
+  existingItems: any[],
+  apiKey: string
+): Promise<{ item_id: string | null; update_data: any }> {
+  const modelName = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+  const body = {
+    contents: [{
+      parts: [{
+        text: `You are an update parser for JodJum (จำจด).
+Identify which item to update and what fields should be modified based on this message: "${messageText}"
+
+Here is the list of active/recent items for this user:
+${JSON.stringify(existingItems.map(item => ({ id: item.id, title: item.title, description: item.description, status: item.status, credit_term: item.credit_term })))}
+
+Format output strictly as JSON:
+{
+  "item_id": "UUID of the matching item to update from the list, or null if no match",
+  "update_data": {
+    "title": "New title if user requested to change the title (clean and descriptive, strip keywords like 'แจ้งเตือน', 'ให้แจ้งเตือน', 'บันทึก')",
+    "description": "New description details if requested",
+    "credit_term": 30 | 60 | 90 | null (if user changed credit term),
+    "po_date": "YYYY-MM-DD",
+    "budget_due_date": "YYYY-MM-DD",
+    "status": "Pending" | "Purchasing" | "Issuing Item"
+  }
+}`
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json"
+    }
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Update parser API error: status ${response.status}`);
+  }
+
+  const data = await response.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const parsed = JSON.parse(rawText.trim());
+
+  if (parsed.update_data && parsed.update_data.title) {
+    parsed.update_data.title = parsed.update_data.title.replace(/^(?:ให้แจ้งเตือน|ไม่แจ้งเตือน|ช่วยแจ้งเตือน|แจ้งเตือน|ช่วยเตือน|เตือน|บันทึก|จด|เพิ่ม)\s*/i, '').trim();
+    parsed.update_data.title = parsed.update_data.title.replace(/^[:\-ー\s\.]+/, '').trim();
+  }
+
+  return parsed;
+}
+
+/**
+ * AI-assisted fallback to match item by title/semantic query if local matching fails.
+ */
+async function findClosestItemWithAI(
+  query: string,
+  items: any[],
+  apiKey: string
+): Promise<string | null> {
+  if (items.length === 0 || !query) return null;
+  const modelName = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+  const body = {
+    contents: [{
+      parts: [{
+        text: `Find the single closest matching item from the list below for the search query: "${query}"
+
+Items list:
+${JSON.stringify(items.map(item => ({ id: item.id, title: item.title })))}
+
+Return the UUID of the closest matching item as a JSON object. Do NOT guess if there is no matching item.
+{
+  "item_id": "UUID of the matching item, or null if there is no reasonable match (do NOT guess if it's completely different)"
+}`
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json"
+    }
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = JSON.parse(rawText.trim());
+    return parsed.item_id || null;
+  } catch (err) {
+    console.error('findClosestItemWithAI error:', err);
+    return null;
+  }
 }
 
 /**
@@ -165,11 +293,7 @@ function findItemByShortId(messageText: string, items: any[]): any | null {
 }
 
 /**
- * Classifies the user's message intent and extracts necessary fields using Google Gemini AI.
- * Falls back to a robust regex parser if API keys are missing or calls fail.
- * 
- * @param messageText User message sent to the LINE Bot
- * @param existingItems List of the user's current items for context matching
+ * Coordinates classification and parsing with specialized AI modular functions.
  */
 export async function classifyAndParseMessageWithAI(
   messageText: string,
@@ -178,7 +302,7 @@ export async function classifyAndParseMessageWithAI(
   const text = messageText.toLowerCase().trim();
   const matchedItem = findItemByShortId(messageText, existingItems);
 
-  // 1.1. Intercept generic/empty commands to ask for details (prevent creating empty/generic cards, like Pa Nuan)
+  // 1. Intercept generic/empty commands to ask for details
   const isGenericWord = /^(เพิ่มข้อมูล|เพิ่ม|จด|บันทึก|จดบันทึก|สั่ง|ซื้อ)$/i.test(text);
   if (isGenericWord) {
     return {
@@ -187,7 +311,7 @@ export async function classifyAndParseMessageWithAI(
     };
   }
 
-  // 1. Intercept greetings and help prompts for instant, friendly replies (no API delay, like Pa Nuan)
+  // 2. Intercept greetings and help prompts for instant, friendly replies (no API delay)
   const isGreeting = /^(สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|ดีจ้า|hello|hi|hey|hola|greetings)/i.test(text);
   const isHelpPrompt = /^(ช่วยจดบันทึก|ช่วยจด|จดบันทึก|จดหน่อย|ช่วยหน่อย|ทำอะไรได้บ้าง|คู่มือ|ใช้งานยังไง)/i.test(text);
 
@@ -205,37 +329,14 @@ export async function classifyAndParseMessageWithAI(
     };
   }
 
-  // 2. Intercept clear command patterns for instant local parsing (no API delay, like Pa Nuan)
-  const isSearchPattern = /^(ค้นหา|หา|search|find|ดู)\s/i.test(text);
-  const isDeletePattern = /^(ลบ|delete|ยกเลิก)\s/i.test(text);
-  const isCompletePattern = /^(เสร็จแล้ว|สำเร็จ|complete|เสร็จ|ออกรหัส|ออกไอเทม)\s/i.test(text);
-  const isUpdatePattern = /^(แก้ไข|แก้|edit|update)\s/i.test(text);
-  const hasCreditTerm = /(?:เครดิต|credit|cr)\s*(30|60|90)/i.test(text);
-  const hasReminder = /(?:แจ้งเตือน|เตือน|นัดหมาย|นัด)\s/i.test(text) || /\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/i.test(text);
-  const isClearCreate = /^(ซื้อ|สั่งซื้อ|สั่ง|จด|บันทึก|เพิ่ม)\b/i.test(text) || hasCreditTerm || hasReminder;
-
-  if (isSearchPattern || isDeletePattern || isCompletePattern || isUpdatePattern || isClearCreate) {
-    console.log(`[FAST INTERCEPT] Pattern matched. Running local regex parser for: "${messageText}"`);
-    return regexFallbackParser(messageText, existingItems);
-  }
-
-  // 1. Intercept with explicit keywords + short ID if matched (100% accurate, no API delay)
+  // 3. Fast exact matching for ID targeted commands (No API delay, 100% accurate)
   if (matchedItem) {
-    // Check for COMPLETE
     if (/(สำเร็จ|เสร็จ|complete|finish|done|ออกรหัส|ออกไอเทม|ออก\s*pr\s*แล้ว)/i.test(text)) {
-      return {
-        intent: 'COMPLETE',
-        item_id: matchedItem.id
-      };
+      return { intent: 'COMPLETE', item_id: matchedItem.id };
     }
-    // Check for DELETE
     if (/(ลบ|ยกเลิก|delete|remove)/i.test(text)) {
-      return {
-        intent: 'DELETE',
-        item_id: matchedItem.id
-      };
+      return { intent: 'DELETE', item_id: matchedItem.id };
     }
-    // Check for request item AX status update
     if (/(แจ้งจัดซื้อ|ขอไอเทม|แอดไอเทม|ส่งจัดซื้อ)/i.test(text)) {
       return {
         intent: 'UPDATE',
@@ -246,7 +347,6 @@ export async function classifyAndParseMessageWithAI(
         } as any
       };
     }
-    // Check for UPDATE (e.g. credit term)
     if (/(แก้ไข|แก้|update|edit)/i.test(text)) {
       const creditMatch = text.match(/(?:เครดิต|credit)\s*(30|60|90)/i);
       const credit_term = creditMatch ? Number(creditMatch[1]) as 30 | 60 | 90 : null;
@@ -256,7 +356,7 @@ export async function classifyAndParseMessageWithAI(
         update_data: credit_term ? { credit_term } : {}
       };
     }
-    // If just the ID suffix is typed, e.g. "7fa" or "#7fa", or with search keywords
+    // If just typing short ID, treat as search
     const isJustId = text === matchedItem.id.substring(matchedItem.id.length - 3).toLowerCase() || 
                       text === '#' + matchedItem.id.substring(matchedItem.id.length - 3).toLowerCase();
     const isSearch = text.includes('ค้นหา') || text.includes('หา') || text.includes('search') || text.includes('find') || text.includes('ดู');
@@ -270,39 +370,92 @@ export async function classifyAndParseMessageWithAI(
     }
   }
 
-  // 2. Fallback to API if keys are available
+  // 4. Fallback to API if keys are available
   const apiKey = getGeminiApiKey();
   if (apiKey) {
-    // Try gemini-2.5-flash first
     try {
-      const parsed = await callGeminiWithModel(
-        'gemini-2.5-flash',
-        apiKey,
-        messageText,
-        existingItems,
-        { thinkingBudget: 0 }
-      );
-      if (parsed) return parsed;
-    } catch (err) {
-      console.error('gemini-2.5-flash failed, trying fallback:', err);
-    }
+      // Step 1: Classify intent
+      const intent = await classifyIntentWithAI(messageText, existingItems, apiKey);
+      console.log(`[AI Modular] Classified intent: ${intent} for message: "${messageText}"`);
 
-    // Fallback to gemini-3.5-flash
-    try {
-      const parsed = await callGeminiWithModel(
-        'gemini-3.5-flash',
-        apiKey,
-        messageText,
-        existingItems,
-        { thinkingLevel: 'LOW' }
-      );
-      if (parsed) return parsed;
+      // Dispatch to specialized parsers
+      if (intent === 'CREATE') {
+        const createData = await parseCreateMessageWithAI(messageText, apiKey);
+        return {
+          intent: 'CREATE',
+          create_data: createData
+        };
+      }
+
+      if (intent === 'UPDATE') {
+        const updateResult = await parseUpdateMessageWithAI(messageText, existingItems, apiKey);
+        let itemId = updateResult.item_id;
+        if (!itemId) {
+          // Fallback to search query matching
+          const query = messageText.replace(/^(แก้ไข|แก้|edit|update)\s*/i, '').trim();
+          itemId = await findClosestItemWithAI(query, existingItems, apiKey);
+        }
+        return {
+          intent: 'UPDATE',
+          item_id: itemId || undefined,
+          update_data: updateResult.update_data
+        };
+      }
+
+      if (intent === 'DELETE') {
+        const query = messageText.replace(/^(ลบ|delete|ยกเลิก)\s*/i, '').trim();
+        let matched = findClosestItem(query, existingItems);
+        if (!matched) {
+          const aiMatchedId = await findClosestItemWithAI(query, existingItems, apiKey);
+          if (aiMatchedId) {
+            matched = existingItems.find(item => item.id === aiMatchedId);
+          }
+        }
+        return {
+          intent: 'DELETE',
+          item_id: matched?.id || undefined
+        };
+      }
+
+      if (intent === 'COMPLETE') {
+        const query = messageText.replace(/^(เสร็จแล้ว|สำเร็จ|complete|เสร็จ|ออกรหัส|ออกไอเทม)\s*/i, '').trim();
+        let matched = findClosestItem(query, existingItems);
+        if (!matched) {
+          const aiMatchedId = await findClosestItemWithAI(query, existingItems, apiKey);
+          if (aiMatchedId) {
+            matched = existingItems.find(item => item.id === aiMatchedId);
+          }
+        }
+        return {
+          intent: 'COMPLETE',
+          item_id: matched?.id || undefined
+        };
+      }
+
+      if (intent === 'SEARCH') {
+        const query = messageText.replace(/^(ค้นหา|หา|search|find|ดู)\s*/i, '').trim();
+        let matched = findClosestItem(query, existingItems);
+        if (!matched) {
+          const aiMatchedId = await findClosestItemWithAI(query, existingItems, apiKey);
+          if (aiMatchedId) {
+            matched = existingItems.find(item => item.id === aiMatchedId);
+          }
+        }
+        return {
+          intent: 'SEARCH',
+          search_query: matched ? matched.title : query,
+          item_id: matched ? matched.id : undefined
+        };
+      }
+
+      return { intent: 'UNKNOWN' };
+
     } catch (err) {
-      console.error('gemini-3.5-flash fallback failed:', err);
+      console.error('[AI Modular] Error, falling back to local parser:', err);
     }
   }
 
-  // Fallback to Regex Parser
+  // 5. Fallback to Regex Parser
   return regexFallbackParser(messageText, existingItems);
 }
 
@@ -406,6 +559,11 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
   title = title.replace(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g, '').trim();
   title = title.replace(/(?:แจ้งเตือน|เตือน|วันจันทร์ที่|วันอังคารที่|วันพุธที่|วันพฤหัสบดีที่|วันศุกร์ที่|วันเสาร์ที่|วันอาทิตย์ที่|วันที่|วัน)\s*$/i, '').trim();
   title = title.replace(/^(เพิ่ม)\s*/i, '').trim();
+  
+  // Clean up prefix reminder/action keywords from the beginning of the title (e.g. "ไม่แจ้งเตือน", "ให้แจ้งเตือน", "แจ้งเตือน")
+  title = title.replace(/^(?:ให้แจ้งเตือน|ไม่แจ้งเตือน|ช่วยแจ้งเตือน|แจ้งเตือน|ช่วยเตือน|เตือน|บันทึก|จด|เพิ่ม)\s*/i, '').trim();
+  // Strip any leading colons, dashes or spaces left over from the keyword removal (e.g. "แจ้งเตือน: ..." -> "...")
+  title = title.replace(/^[:\-ー\s\.]+/, '').trim();
 
   return {
     intent: 'CREATE',
@@ -420,16 +578,24 @@ function regexFallbackParser(messageText: string, existingItems: any[]): GeminiP
   };
 }
 
+/**
+ * Searches and finds the closest matching item in the list.
+ * Will return null if targeted short ID lookup is not found, to prevent accidental mismatches.
+ */
 function findClosestItem(query: string, items: any[]): any | null {
   if (items.length === 0 || !query) return null;
   const cleanQuery = query.toLowerCase().trim();
 
-  // Try matching by short ID first
+  // Try matching by short ID first (most specific)
   const shortIdMatch = cleanQuery.match(/(?:#)?\b([a-f0-9]{3})\b/) || cleanQuery.match(/(?:#)?([a-f0-9]{3})$/);
   if (shortIdMatch) {
     const shortId = shortIdMatch[1];
     const found = items.find(item => item.id.toLowerCase().endsWith(shortId));
     if (found) return found;
+    
+    // CRITICAL: If short ID is matched but item is not found, do NOT fall back to title substring.
+    // Return null to prevent deleting or modifying the wrong item.
+    return null;
   }
 
   // Try direct substring match
@@ -438,5 +604,5 @@ function findClosestItem(query: string, items: any[]): any | null {
       return item;
     }
   }
-  return items[0]; // fallback to latest
+  return null; // Return null instead of items[0] to prevent accidental destructive actions
 }
