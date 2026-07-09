@@ -277,7 +277,7 @@ export function createItemFlexBubble(item: any, appUrl: string) {
 export function createStockListFlex(stocks: any[], op: string, qty: number | null, searchName: string) {
   const opLabel = op === 'SUBTRACT' ? 'เบิกออก' : op === 'ADD' ? 'เพิ่มสต็อก' : op === 'SET' ? 'ปรับยอด' : 'เช็กยอด';
   
-  const contents = stocks.slice(0, 8).map(stock => {
+  const contents: any[] = stocks.slice(0, 8).map(stock => {
     const postbackData = `action=stock_execute&id=${stock.id}&op=${op}&qty=${qty || ''}`;
     const isAlert = stock.quantity <= (stock.min_threshold ?? 0);
     const displayName = isAlert ? `⚠️ ${stock.name} (ใกล้หมด)` : stock.name;
@@ -321,15 +321,34 @@ export function createStockListFlex(stocks: any[], op: string, qty: number | nul
           color: '#94a3b8'
         },
         {
-          type: 'button',
-          style: 'primary',
-          color: op === 'SUBTRACT' ? '#ef4444' : '#8b5cf6',
-          height: 'sm',
-          action: {
-            type: 'postback',
-            label: `${opLabel} รายการนี้`,
-            data: postbackData
-          }
+          type: 'box',
+          layout: 'horizontal',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'button',
+              style: 'primary',
+              color: op === 'SUBTRACT' ? '#ef4444' : '#8b5cf6',
+              height: 'sm',
+              flex: 3,
+              action: {
+                type: 'postback',
+                label: opLabel,
+                data: postbackData
+              }
+            },
+            {
+              type: 'button',
+              style: 'secondary',
+              height: 'sm',
+              flex: 2,
+              action: {
+                type: 'postback',
+                label: '✍️ แก้ชื่อ',
+                data: `action=stock_request_edit&id=${stock.id}`
+              }
+            }
+          ]
         },
         {
           type: 'separator',
@@ -760,6 +779,26 @@ export async function POST(request: Request) {
               replyToken,
               `✍️ เตรียมแก้ไขรายการ: "${item.title}"\n\nกรุณาพิมพ์รายละเอียดใหม่ที่คุณต้องการแก้ไขเข้ามาได้เลยครับ เช่น:\n- "เครดิต 60 วัน"\n- "แก้ชื่อเป็น คอมพิวเตอร์ i7"\n- "แก้คำอธิบายเป็น ซื้อมาใช้ในออฟฟิศ"\n(บอทจะอัปเดตข้อมูลรายการนี้โดยตรง)`
             );
+          } else if (action === 'stock_request_edit') {
+            const stockId = params.get('id');
+            if (!stockId) continue;
+            const { data: stock, error: fetchError } = await supabaseAdmin
+              .from('stocks')
+              .select('name')
+              .eq('id', stockId)
+              .single();
+
+            if (fetchError || !stock) {
+              await sendLineReply(replyToken, '❌ ไม่พบวัสดุชิ้นนี้ในสต็อกแล้ว');
+              continue;
+            }
+
+            memoryStateCache.set(lineUserId, { action: 'stock_editing', stockId: stockId, stockName: stock.name });
+
+            await sendLineReply(
+              replyToken,
+              `✍️ เตรียมแก้ไขชื่อวัสดุ: "${stock.name}"\n\nกรุณาพิมพ์ชื่อใหม่ที่คุณต้องการแก้ไขเข้ามาได้เลยครับ\n(บอทจะอัปเดตชื่อวัสดุนี้โดยตรง)`
+            );
           } else if (action === 'view_items') {
             const statusParam = params.get('status');
             
@@ -1101,6 +1140,36 @@ export async function POST(request: Request) {
       }
 
       const userState = memoryStateCache.get(lineUserId);
+
+      // Handle stock pending edit name input
+      if (userState && userState.action === 'stock_editing') {
+        let newName = messageText.trim();
+        newName = newName.replace(/^(แก้ไข|แก้|เปลี่ยน|edit|update|ชื่อ|เป็น)\s*/i, '').trim();
+        
+        if (!newName) {
+          await sendLineReply(replyToken, '❌ ชื่อวัสดุห้ามว่างเปล่า กรุณาพิมพ์ใหม่อีกครั้งครับ');
+          continue;
+        }
+
+        const { data: updatedStock, error: updateError } = await supabaseAdmin
+          .from('stocks')
+          .update({ name: newName, updated_at: new Date().toISOString() })
+          .eq('id', userState.stockId)
+          .select('*')
+          .single();
+
+        memoryStateCache.delete(lineUserId);
+
+        if (updateError || !updatedStock) {
+          await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการแก้ไขชื่อวัสดุ');
+        } else {
+          await sendLineReply(
+            replyToken,
+            `✅ แก้ไขชื่อวัสดุจาก "${userState.stockName}" เป็น "${newName}" เรียบร้อยแล้วครับ! 📦`
+          );
+        }
+        continue;
+      }
       
       // Handle stock pending quantity input
       if (userState && userState.action === 'stock_pending_qty') {
