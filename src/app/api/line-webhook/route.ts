@@ -852,6 +852,28 @@ export async function POST(request: Request) {
       const existingItems = itemsData || [];
 
       // 3. Stateful edit mode check & "รายการ" command interception
+      if (['สต็อก', 'ดูสต็อก', 'เช็กสต็อก', 'วัสดุ', 'ดูวัสดุ', 'เช็คสต็อก', 'เช็ควัสดุ'].includes(messageText.trim().toLowerCase())) {
+        const { data: matchedStocks, error: searchError } = await supabaseAdmin
+          .from('stocks')
+          .select('*')
+          .eq('user_id', profile.id)
+          .order('name', { ascending: true });
+
+        if (searchError || !matchedStocks || matchedStocks.length === 0) {
+          await sendLineReply(replyToken, '📦 คลังวัสดุของคุณยังไม่มีรายการใดๆ สามารถเปิดหน้าเว็บเพื่อเพิ่มวัสดุใหม่ หรือพิมพ์สั่งแอดวัสดุได้เลยครับ เช่น "เพิ่ม แอลกอฮอล์ 10 ขวด"');
+          continue;
+        }
+
+        const flexBubble = createStockListFlex(matchedStocks, 'CHECK', null, 'คลังวัสดุทั้งหมด');
+        
+        await sendLineReply(replyToken, {
+          type: 'flex',
+          altText: '📦 รายการสต็อกวัสดุทั้งหมดของคุณ',
+          contents: flexBubble
+        });
+        continue;
+      }
+
       if (messageText.trim() === 'รายการ' || messageText.trim() === 'ดูรายการ') {
         const listMenuFlex = {
           type: 'flex',
