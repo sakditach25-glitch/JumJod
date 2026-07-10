@@ -5,8 +5,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/components/providers/auth-provider';
 import { StockItem } from '@/lib/types';
-import { Plus, Search, Edit2, Trash2, AlertCircle, Package, Minus, ArrowUpDown, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, AlertCircle, Package, Minus, ArrowUpDown, AlertTriangle, History } from 'lucide-react';
 import StockModal from '@/components/dashboard/stock-modal';
+import StockHistoryModal from '@/components/dashboard/stock-history-modal';
 
 export default function StockPage() {
   const { user } = useAuth();
@@ -17,6 +18,7 @@ export default function StockPage() {
   const [filterCategory, setFilterCategory] = useState<'all' | 'อุปกรณ์สำนักงาน' | 'Laboratory'>('all');
   const [sortBy, setSortBy] = useState<'name-asc' | 'priority-desc' | 'alert-first' | 'qty-asc'>('name-asc');
   const [modalOpen, setModalOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockItem | null>(null);
 
   // Fetch stocks using TanStack Query
@@ -33,18 +35,23 @@ export default function StockPage() {
     enabled: !!user?.id,
   });
 
-  // Adjust quantity mutation
+  // Adjust quantity mutation via API (enables push alerts on threshold)
   const adjustQuantityMutation = useMutation({
     mutationFn: async ({ id, newQuantity }: { id: string; newQuantity: number }) => {
-      const { error } = await supabase
-        .from('stocks')
-        .update({ quantity: Math.max(0, newQuantity), updated_at: new Date().toISOString() })
-        .eq('id', id);
+      const response = await fetch('/api/stock/adjust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, newQuantity })
+      });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData?.error || 'Failed to adjust quantity');
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stocks'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-transactions'] });
     },
   });
 
@@ -138,13 +145,22 @@ export default function StockPage() {
             ตรวจเช็กและจัดการยอดสต็อกวัสดุสำนักงาน และงาน Laboratory ของคุณ
           </p>
         </div>
-        <button
-          onClick={handleAddStock}
-          className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-gradient-to-r from-violet-650 to-indigo-650 hover:from-violet-600 hover:to-indigo-600 text-white text-sm shadow-lg shadow-indigo-650/10 active:scale-[0.98] transition-all cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>เพิ่มวัสดุ</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-750 dark:text-slate-200 text-sm border border-slate-200 dark:border-slate-700 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <History className="w-4 h-4 text-slate-500" />
+            <span>ประวัติทำรายการ</span>
+          </button>
+          <button
+            onClick={handleAddStock}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-gradient-to-r from-violet-650 to-indigo-650 hover:from-violet-600 hover:to-indigo-600 text-white text-sm shadow-lg shadow-indigo-650/10 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>เพิ่มวัสดุ</span>
+          </button>
+        </div>
       </div>
 
       {/* Dashboard Summary Section */}
@@ -462,6 +478,12 @@ export default function StockPage() {
           stockToEdit={selectedStock}
         />
       )}
+
+      {/* Stock History Modal */}
+      <StockHistoryModal
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
     </div>
   );
 }

@@ -1455,7 +1455,9 @@ export async function POST(request: Request) {
                 await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
               } else {
                 const opText = op === 'SUBTRACT' ? 'เบิกออก' : op === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
-                await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦`);
+                const isAlertTriggered = newQty <= stockItem.min_threshold && stockItem.quantity > stockItem.min_threshold;
+                const alertMsg = isAlertTriggered ? `\n\n⚠️ **คำเตือน:** ระดับวัสดุลดลงต่ำกว่าเกณฑ์ขั้นต่ำแล้ว! (เกณฑ์: ${stockItem.min_threshold} ${stockItem.unit})` : '';
+                await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦${alertMsg}`);
               }
             } else {
               memoryStateCache.set(lineUserId, {
@@ -1862,7 +1864,9 @@ export async function POST(request: Request) {
             await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
           } else {
             const opText = userState.operation === 'SUBTRACT' ? 'เบิกออก' : userState.operation === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
-            await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦`);
+            const isAlertTriggered = newQty <= stockItem.min_threshold && stockItem.quantity > stockItem.min_threshold;
+            const alertMsg = isAlertTriggered ? `\n\n⚠️ **คำเตือน:** ระดับวัสดุลดลงต่ำกว่าเกณฑ์ขั้นต่ำแล้ว! (เกณฑ์: ${stockItem.min_threshold} ${stockItem.unit})` : '';
+            await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${stockItem.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${stockItem.quantity} ${stockItem.unit}\nทำรายการ: ${qty} ${stockItem.unit}\nยอดคงเหลือใหม่: ${newQty} ${stockItem.unit} 📦${alertMsg}`);
           }
         } else {
           await sendLineReply(replyToken, '❌ กรุณาระบุจำนวนเป็นตัวเลขอีกครั้งครับ เช่น "5" หรือ "10"');
@@ -2212,7 +2216,9 @@ export async function POST(request: Request) {
               await sendLineReply(replyToken, '❌ เกิดข้อผิดพลาดในการปรับยอดสต็อก');
             } else {
               const opText = stockData.action === 'SUBTRACT' ? 'เบิกออก' : stockData.action === 'ADD' ? 'เติมสต็อก' : 'ปรับยอด';
-              await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${targetStock.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${targetStock.quantity} ${targetStock.unit}\nทำรายการ: ${stockData.quantity} ${targetStock.unit}\nยอดคงเหลือใหม่: ${newQty} ${targetStock.unit} 📦`);
+              const isAlertTriggered = newQty <= targetStock.min_threshold && targetStock.quantity > targetStock.min_threshold;
+              const alertMsg = isAlertTriggered ? `\n\n⚠️ **คำเตือน:** ระดับวัสดุลดลงต่ำกว่าเกณฑ์ขั้นต่ำแล้ว! (เกณฑ์: ${targetStock.min_threshold} ${targetStock.unit})` : '';
+              await sendLineReply(replyToken, `✅ ทำการ${opText}วัสดุ "${targetStock.name}" เรียบร้อยแล้วครับ!\n\nยอดเดิม: ${targetStock.quantity} ${targetStock.unit}\nทำรายการ: ${stockData.quantity} ${targetStock.unit}\nยอดคงเหลือใหม่: ${newQty} ${targetStock.unit} 📦${alertMsg}`);
             }
             continue;
           }

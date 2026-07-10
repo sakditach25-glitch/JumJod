@@ -45,8 +45,13 @@ async function sendLinePush(to: string, content: any) {
 export async function GET(request: Request) {
   try {
     const now = new Date().toISOString();
-    
-    // 1. Fetch items where reminder_date <= now AND reminder_sent = false
+    const requestUrl = new URL(request.url);
+    const appUrl = requestUrl.origin;
+    let sentCount = 0;
+
+    // ==========================================
+    // 1. Handle normal user reminders (reminder_date)
+    // ==========================================
     const { data: items, error } = await supabaseAdmin
       .from('items')
       .select('*')
@@ -58,59 +63,105 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    if (!items || items.length === 0) {
-      return NextResponse.json({ message: 'No pending reminders found.' });
-    }
+    if (items && items.length > 0) {
+      console.log(`[CRON REMINDERS] Found ${items.length} normal reminders to process.`);
+      for (const item of items) {
+        const { data: profile, error: profileError } = await supabaseAdmin
+          .from('profiles')
+          .select('line_user_id')
+          .eq('id', item.user_id)
+          .single();
 
-    console.log(`[CRON REMINDERS] Found ${items.length} items to remind.`);
-    
-    const requestUrl = new URL(request.url);
-    const appUrl = requestUrl.origin;
-
-    let sentCount = 0;
-
-    for (const item of items) {
-      // 2. Fetch the corresponding profile to get line_user_id
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .select('line_user_id')
-        .eq('id', item.user_id)
-        .single();
-
-      if (profileError || !profile || !profile.line_user_id) {
-        console.warn(`[CRON REMINDERS] No LINE connection found for user of item ${item.id}`);
-        // Mark as sent to prevent infinite loops on unlinked items
-        await supabaseAdmin
-          .from('items')
-          .update({ reminder_sent: true })
-          .eq('id', item.id);
-        continue;
-      }
-
-      // 3. Construct and send the LINE push reminder message
-      const { createItemFlexBubble } = await import('../../line-webhook/route');
-      const bubble = createItemFlexBubble(item, appUrl);
-      
-      const pushSuccess = await sendLinePush(profile.line_user_id, [
-        `⏰ **แจ้งเตือนความจำจัดซื้อ!**\nถึงเวลาดำเนินการหรือแจ้งเตือนวันกำหนดของรายการ: "${item.title}" แล้วครับ`,
-        {
-          type: 'flex',
-          altText: `⏰ แจ้งเตือน: ${item.title}`,
-          contents: bubble
+        if (profileError || !profile || !profile.line_user_id) {
+          await supabaseAdmin
+            .from('items')
+            .update({ reminder_sent: true })
+            .eq('id', item.id);
+          continue;
         }
-      ]);
 
-      if (pushSuccess) {
-        // 4. Update database flag to avoid duplicate sends
-        await supabaseAdmin
-          .from('items')
-          .update({ reminder_sent: true })
-          .eq('id', item.id);
-        sentCount++;
+        const { createItemFlexBubble } = await import('../../line-webhook/route');
+        const bubble = createItemFlexBubble(item, appUrl);
+        
+        const pushSuccess = await sendLinePush(profile.line_user_id, [
+          `⏰ **แจ้งเตือนความจำจัดซื้อ!**\nถึงเวลาดำเนินการหรือแจ้งเตือนวันกำหนดของรายการ: "${item.title}" แล้วครับ`,
+          {
+            type: 'flex',
+            altText: `⏰ แจ้งเตือน: ${item.title}`,
+            contents: bubble
+          }
+        ]);
+
+        if (pushSuccess) {
+          await supabaseAdmin
+            .from('items')
+            .update({ reminder_sent: true })
+            .eq('id', item.id);
+          sentCount++;
+        }
       }
     }
 
-    return NextResponse.json({ message: `Successfully sent ${sentCount} reminders.` });
+    // ==========================================
+    // 2. Handle budget due date alerts (lacking Completed status)
+    // ==========================================
+    const threeDaysLater = new Date();
+    threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+    const threeDaysStr = threeDaysLater.toISOString().substring(0, 10);
+
+    const { data: dueItems, error: dueError } = await supabaseAdmin
+      .from('items')
+      .select('*')
+      .neq('status', 'Issuing Item') // Not completed yet
+      .lte('budget_due_date', threeDaysStr)
+      .eq('due_reminder_sent', false);
+
+    if (dueError) {
+      console.error('Error fetching items for budget due reminders:', dueError);
+    } else if (dueItems && dueItems.length > 0) {
+      console.log(`[CRON REMINDERS] Found ${dueItems.length} budget due date alerts to process.`);
+      for (const item of dueItems) {
+        const { data: profile, error: profileError } = await supabaseAdmin
+          .from('profiles')
+          .select('line_user_id')
+          .eq('id', item.user_id)
+          .single();
+
+        if (profileError || !profile || !profile.line_user_id) {
+          await supabaseAdmin
+            .from('items')
+            .update({ due_reminder_sent: true })
+            .eq('id', item.id);
+          continue;
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const dueDate = new Date(item.budget_due_date!);
+        dueDate.setHours(0, 0, 0, 0);
+
+        const diffTime = dueDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        let dayText = `ในอีก ${diffDays} วัน`;
+        if (diffDays === 0) dayText = 'วันนี้';
+        if (diffDays < 0) dayText = `ที่ผ่านมาแล้ว (เกินกำหนดชำระ ${Math.abs(diffDays)} วัน)`;
+
+        const pushSuccess = await sendLinePush(profile.line_user_id, [
+          `🚨 **แจ้งเตือนใบจัดซื้อใกล้ครบกำหนดเครดิตเทอมชำระเงิน!**\n\n📄 รายการ: "${item.title}"\n📅 วันที่ครบกำหนด: ${item.budget_due_date} (${dayText})\n💵 เครดิตเทอม: ${item.credit_term} วัน\n⚠️ สถานะปัจจุบัน: ${item.status}\n\nกรุณาเร่งรัดการจ่ายเงินหรือตรวจเช็กเอกสารจัดซื้อด้วยครับ`
+        ]);
+
+        if (pushSuccess) {
+          await supabaseAdmin
+            .from('items')
+            .update({ due_reminder_sent: true })
+            .eq('id', item.id);
+          sentCount++;
+        }
+      }
+    }
+
+    return NextResponse.json({ message: `Successfully processed ${sentCount} reminders.` });
   } catch (err: any) {
     console.error('Unexpected error in cron reminders:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
